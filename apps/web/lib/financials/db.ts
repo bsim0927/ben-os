@@ -39,10 +39,38 @@ let pool: Pool | undefined;
  */
 export function financialsPool(): Pool {
   if (!pool) {
-    const connectionString = process.env.DATABASE_URL;
+    const connectionString = process.env.DATABASE_URL?.trim();
 
     if (!connectionString) {
-      throw new Error("Missing DATABASE_URL — see apps/web/.env.example");
+      throw new Error(
+        "DATABASE_URL is not set on this deployment. Copy a connection string from " +
+          "Supabase → Connect, append ?sslmode=no-verify, and redeploy — variables are read " +
+          "at build time, so a running deployment keeps the ones it was built with.",
+      );
+    }
+
+    // Parsed here purely to fail with a message that names the culprit. `pg`
+    // rejects a malformed string with a bare "Invalid URL", which — arriving in
+    // a route that handles two other URLs as well — says nothing about which
+    // one, let alone why.
+    //
+    // The causes named below are the ones that actually throw, checked rather
+    // than assumed — the intuitive guesses are mostly wrong. A leftover
+    // `[YOUR-PASSWORD]` placeholder parses fine, and so does an unencoded `@` in
+    // the password: the URL spec splits on the *last* `@`, so the host survives.
+    // What genuinely breaks it is a `#` or `/` in the password, quotes around
+    // the value, or the `psql '…'` line from Supabase's Connect dialog pasted
+    // whole instead of the URL inside it.
+    try {
+      new URL(connectionString);
+    } catch {
+      throw new Error(
+        "DATABASE_URL is not a valid URL. Three things cause this: the value is the " +
+          "`psql '…'` command from Supabase's Connect dialog rather than the bare URL " +
+          "inside it; the value is wrapped in quotes; or the password contains a # or / " +
+          "that has to be percent-encoded (%23, %2F). Resetting the database password to " +
+          "an alphanumeric one avoids the encoding question entirely.",
+      );
     }
 
     // Small on purpose: this pool serves one cron invocation at a time, and

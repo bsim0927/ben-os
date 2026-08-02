@@ -25,11 +25,21 @@ export async function GET(request: Request): Promise<Response> {
     return Response.json({ error: auth.reason }, { status: 401 });
   }
 
-  const accessUrl = process.env.SIMPLEFIN_ACCESS_URL;
+  const accessUrl = process.env.SIMPLEFIN_ACCESS_URL?.trim();
 
+  // Names the two ways to be here, because they need opposite things: someone
+  // who has never claimed a token needs the claim route, and someone who has
+  // needs to notice the variable didn't reach this build.
   if (!accessUrl) {
     return Response.json(
-      { error: "Missing SIMPLEFIN_ACCESS_URL — claim a Setup Token first." },
+      {
+        error:
+          "SIMPLEFIN_ACCESS_URL is not set on this deployment. If you already hold an Access " +
+          "URL, add it to the Vercel project's environment variables for the Production " +
+          "environment and redeploy — variables are read at build time, so a running " +
+          "deployment keeps the ones it was built with. If you have not claimed one yet, " +
+          "POST a Setup Token to /api/financials/claim first.",
+      },
       { status: 503 },
     );
   }
