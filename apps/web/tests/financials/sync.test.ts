@@ -446,6 +446,47 @@ describe("per-connection error isolation", () => {
   });
 });
 
+describe("the sync job's own database session", () => {
+  it("runs every unit of work as the authorized user, not as the superuser it dialled", async () => {
+    const seen = await withAuthorizedSession(testPool(), (unitOfWork) =>
+      unitOfWork(async (query) => {
+        const { rows } = await query(
+          "select current_user::text as role, public.is_authorized() as authorized",
+        );
+
+        return rows[0];
+      }),
+    );
+
+    expect(seen).toEqual({ role: "authenticated", authorized: true });
+  });
+
+  it("re-establishes them for each unit of work rather than once per session", async () => {
+    // The settings are transaction-scoped, so the second unit of work is only
+    // authorized if it sets them up itself. This is what makes the job correct
+    // under a pooler that gives each transaction a different backend — routing
+    // no test here can reproduce, but the per-transaction setup it needs is
+    // exactly what this asserts.
+    const seen = await withAuthorizedSession(testPool(), async (unitOfWork) => {
+      const first = await unitOfWork(async (query) => {
+        const { rows } = await query("select current_user::text as role");
+
+        return rows[0].role;
+      });
+
+      const second = await unitOfWork(async (query) => {
+        const { rows } = await query("select current_user::text as role");
+
+        return rows[0].role;
+      });
+
+      return [first, second];
+    });
+
+    expect(seen).toEqual(["authenticated", "authenticated"]);
+  });
+});
+
 describe("row level security", () => {
   it("hides every financials table from a caller who is not the authorized user", async () => {
     await runSync([chaseOnly()]);

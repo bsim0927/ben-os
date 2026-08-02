@@ -54,33 +54,46 @@ export function financialsPool(): Pool {
 }
 
 /**
- * Borrows a connection, becomes the authorized user on it, and lends `fn` a way
- * to run transactions as that user.
+ * Borrows a connection and lends `fn` a way to run transactions as the
+ * authorized user.
  *
- * The role and claim are session-level rather than `set local`, because the
- * units of work inside are separate transactions and settings scoped to one
- * would not survive into the next. `discard all` on the way out is what makes
- * that safe — without it a pooled connection would be handed to the next
- * borrower still wearing this role.
+ * The role and the JWT claim are established *inside* each transaction, and
+ * scoped to it. That placement is the whole point, and it is not obvious:
+ *
+ * A connection pooler in transaction mode — which is what Supabase hands out
+ * for serverless clients, and what Vercel cron is — gives each transaction its
+ * own backend connection rather than one per client. Anything set at session
+ * level therefore lands on a backend that gets released immediately, and the
+ * transaction that follows can run somewhere that never saw it. That backend is
+ * still the superuser the pool dialled, which carries BYPASSRLS, so every
+ * policy would be skipped — and nothing would fail. The writes would succeed,
+ * the data would be correct, and the backstop would be silently gone.
+ *
+ * A transaction is guaranteed to run entirely on one backend in either pooling
+ * mode, so scoping the settings to it makes this correct wherever it runs, and
+ * removes the need to reason about which connection string was configured.
+ *
+ * It also means nothing has to be cleaned up: `set local` unwinds at commit or
+ * rollback, so a pooled connection can never be handed on still wearing the
+ * role. Previously a failed reset would have leaked it.
  */
 export async function withAuthorizedSession<T>(
   pool: Pool,
   fn: (unitOfWork: UnitOfWork) => Promise<T>,
 ): Promise<T> {
   const client = await pool.connect();
+  const claims = JSON.stringify({ email: ALLOWED_EMAIL, role: "authenticated" });
 
   try {
-    // Set before dropping privileges: `authenticated` may run this, but doing it
-    // first keeps the ordering obviously correct rather than incidentally so.
-    await client.query("select set_config('request.jwt.claims', $1, false)", [
-      JSON.stringify({ email: ALLOWED_EMAIL, role: "authenticated" }),
-    ]);
-    await client.query("set role authenticated");
-
     const unitOfWork: UnitOfWork = async (body) => {
       await client.query("begin");
 
       try {
+        // Claims before the role change: `authenticated` may set them too, but
+        // this order is obviously correct rather than incidentally so.
+        await client.query("select set_config('request.jwt.claims', $1, true)", [claims]);
+        await client.query("set local role authenticated");
+
         const result = await body((text, params) => client.query(text, params));
 
         await client.query("commit");
@@ -98,10 +111,6 @@ export async function withAuthorizedSession<T>(
 
     return await fn(unitOfWork);
   } finally {
-    await client.query("discard all").catch(() => {
-      // Best effort. A connection that can't be reset is one pg will discard.
-    });
-
     client.release();
   }
 }

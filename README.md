@@ -187,6 +187,11 @@ Three behaviours worth knowing before reading the code:
   presents the authorized email as a JWT claim (`lib/financials/db.ts`). The service role would have
   been easier and would have bypassed every policy — which would make the sync the one client that
   never tests the backstop ADR 0001 exists to provide.
+  Both settings are established **inside each transaction**, not once per connection. That is what
+  makes any of Supabase's connection strings safe to use: a pooler in transaction mode gives each
+  transaction its own backend, so session-level settings could land on one that is released before
+  the work runs — leaving it as the superuser the pool dialled, with `BYPASSRLS`, and nothing would
+  fail. The writes would succeed and the backstop would be silently gone.
 - **Sync never writes user-owned columns.** `financials_account.kind`, `.status`, and
   `financials_transaction.category_id` are set by the user and pointedly absent from every `on
 conflict do update` list, so a poll can't undo a categorization or reopen a closed account.
