@@ -1,6 +1,7 @@
 # Financials module schema
 
 **Status**: accepted
+**Note**: the `financials_connection`/`financials_account`/`financials_transaction` column names below (`simplefin_conn_id`, `sfin_url`, `simplefin_account_id`, `simplefin_transaction_id`) are superseded by [ADR 0003](./0003-financials-multi-provider-and-account-kind.md), which generalizes these tables beyond SimpleFIN and adds `financials_account.kind`. Left as-written here for historical record of the original design; ADR 0003 is the current source of truth for those columns.
 
 The Financials module (net worth + transaction history via SimpleFIN) needs Supabase tables covering connections, accounts, transactions, and net-worth history, following the baseline in [ADR 0001](./0001-baseline-supabase-schema-conventions.md). Five tables:
 
