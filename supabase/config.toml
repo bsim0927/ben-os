@@ -1,0 +1,30 @@
+# Supabase CLI configuration for local development.
+#
+# The hosted project is configured through the dashboard; this file is the
+# local mirror of it, and the record of what those settings are meant to be.
+
+project_id = "ben-os"
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = [
+  "http://localhost:3000/auth/callback",
+  "http://127.0.0.1:3000/auth/callback",
+]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+
+# Google is the only way in. Leaving password signup on would let someone
+# register the allowed address directly and walk straight past the restriction
+# that the whole gate is built on.
+[auth.email]
+enable_signup = false
+enable_confirmations = true
+
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
+skip_nonce_check = false

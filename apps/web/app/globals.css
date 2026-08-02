@@ -1,26 +1,55 @@
 @import "tailwindcss";
 
+/*
+ * The Console identity, locked in issue #5: dense, dark-first, hairline borders
+ * instead of shadows, one restrained accent, tabular numerals for data,
+ * uppercase micro-labels for section headers.
+ *
+ * Dark-first here means dark-only. A light palette would need its own set of
+ * hairline/panel values to stay legible, and no one has asked for one — this is
+ * a single-user console.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+
+  --bg: #0b0d10;
+  --panel: #14171b;
+  --panel-2: #191d22;
+  --hairline: #232830;
+  --ink: #e6e9ed;
+  --muted: #838c99;
+  --accent: #38bdf8;
+  --positive: #34d399;
+  --negative: #f87171;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-hairline: var(--hairline);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), system-ui, sans-serif;
+/* Figures line up column-to-column wherever data is tabulated. */
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
