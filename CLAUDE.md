@@ -14,6 +14,7 @@ Supabase project `fcqoliweobjhpgqfgxao` exists and is live. Reach it through the
 server**, not dashboard clicks or ad-hoc `psql` — setup and its pitfalls are in README, "Inspecting
 and changing the database". The server runs without `--read-only`, so it can apply DDL.
 
-Its schema is still the pre-ADR design and needs a full wipe and clean-slate redesign; nothing
-currently in `public` is worth preserving. Schema conventions every table must follow are in
+The pre-ADR schema has been wiped (`20260802040000_wipe_pre_adr_schema.sql`). `public` now holds
+exactly one object — `is_authorized()`, the RLS backstop — so the Financials tables are the first
+thing built on a clean slate. Schema conventions every table must follow are in
 `docs/adr/0001-baseline-supabase-schema-conventions.md`.

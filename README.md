@@ -58,16 +58,12 @@ editing both.** There is no `public.profile` table; auth relies on `auth.users` 
 The hosted project already exists: ref **`fcqoliweobjhpgqfgxao`** (`us-east-2`), at
 `https://fcqoliweobjhpgqfgxao.supabase.co`.
 
-> [!IMPORTANT]
-> **Its schema is not the one this repo describes.** The project predates these ADRs and still holds
-> the earlier design. It needs a full wipe and clean-slate redesign before the Financials tables
-> land — treat everything currently in `public` as disposable. There is no data worth preserving,
-> which is exactly why [#20](https://github.com/bsim0927/ben-os/issues/20) specifies a redesign from
-> scratch rather than a migration path.
->
-> `supabase/migrations/20260802040000_wipe_pre_adr_schema.sql` performs that wipe. It is idempotent,
-> and it also prunes the migration-history rows left behind by the earlier design, so apply it before
-> writing any `financials_*` migration.
+The project predates these ADRs and once held an earlier design — a reading ingester plus a `fin_*`
+finance prototype. That schema has been wiped by
+`supabase/migrations/20260802040000_wipe_pre_adr_schema.sql`, which is why
+[#20](https://github.com/bsim0927/ben-os/issues/20) specifies a redesign from scratch rather than a
+migration path. `public` now holds exactly one object: `is_authorized()`. The Financials tables are
+the first thing built on the clean slate.
 
 Remaining setup — dashboard settings that can't live in this repo:
 
