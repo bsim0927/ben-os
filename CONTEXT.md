@@ -31,3 +31,11 @@ _Avoid_: Balance (ambiguous between "the account's current balance" and "a histo
 **Category**:
 A user-assigned label on a transaction. SimpleFIN provides no native categorization, so this is entirely app-owned.
 _Avoid_: Tag — categories are single-valued per transaction in v1, not a many-valued tagging system.
+
+**Security**:
+A tradable financial instrument (stock, ETF, mutual fund, etc.), identified by ticker symbol. Provider-agnostic reference data, shared across every Holding that references it.
+_Avoid_: Ticker, symbol, instrument — "Security" is the entity; a ticker/symbol is one of its fields.
+
+**Holding**:
+A snapshot of a Security's position within an Account as of a given sync — quantity, cost basis, market price. A new row is written on every sync (not upserted), so "current holdings" means the latest snapshot per Account/Security pair, not a standing record.
+_Avoid_: Position — used in the SnapTrade research as an interchangeable term, but "Holding" is this codebase's canonical word.
