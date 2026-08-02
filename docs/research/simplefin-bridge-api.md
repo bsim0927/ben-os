@@ -15,7 +15,7 @@ Interchange"): a small HTTP spec that any bank or aggregator can implement for f
 as a simpler/cheaper alternative to formats like QFX ("Banks don't have to pay anyone to use it
 (like they do with QFX)") — [simplefin.org](https://www.simplefin.org/).
 
-**SimpleFIN Bridge** (`beta-bridge.simplefin.org`) is a hosted aggregator that *implements* the
+**SimpleFIN Bridge** (`beta-bridge.simplefin.org`) is a hosted aggregator that _implements_ the
 SimpleFIN protocol on top of many banks that don't natively speak it — i.e. it's the
 Plaid-equivalent layer: it does the actual bank-credential linking/scraping and exposes the
 result as a standard SimpleFIN server. A client app (like this dashboard) never talks to the
@@ -70,13 +70,13 @@ these):
 
 **`GET /accounts` query parameters:**
 
-| Param | Meaning |
-|---|---|
-| `version` | protocol version, e.g. `version=2` (recommended to pin explicitly) |
-| `start-date` | Unix epoch seconds, inclusive |
-| `end-date` | Unix epoch seconds, exclusive |
-| `pending` | `1` to include pending transactions |
-| `account` | account ID filter, repeatable, for fetching a subset of accounts |
+| Param           | Meaning                                                                       |
+| --------------- | ----------------------------------------------------------------------------- |
+| `version`       | protocol version, e.g. `version=2` (recommended to pin explicitly)            |
+| `start-date`    | Unix epoch seconds, inclusive                                                 |
+| `end-date`      | Unix epoch seconds, exclusive                                                 |
+| `pending`       | `1` to include pending transactions                                           |
+| `account`       | account ID filter, repeatable, for fetching a subset of accounts              |
 | `balances-only` | `1` to skip transaction data entirely and return just balances (cheaper call) |
 
 **Response shape — top-level "Account Set":**
@@ -88,29 +88,29 @@ these):
 
 **Account object:**
 
-| Field | Required? | Notes |
-|---|---|---|
-| `id` | required | stable account identifier |
-| `name` | required | account display name |
-| `conn_id` | required (v2) | identifies which Connection (login) this account belongs to — lets you distinguish two logins to the same bank |
-| `currency` | required | ISO 4217 code (e.g. `"USD"`), or a URL for non-standard "currencies" (e.g. rewards points) that resolves to JSON `{name, abbr}` |
-| `balance` | required | current balance, numeric string |
-| `balance-date` | required | Unix timestamp of when `balance`/`available-balance` were computed |
-| `available-balance` | optional | |
-| `transactions` | optional | array of Transaction objects, omitted if `balances-only=1` |
-| `extra` | optional | institution-specific bag of extra fields |
+| Field               | Required?     | Notes                                                                                                                           |
+| ------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                | required      | stable account identifier                                                                                                       |
+| `name`              | required      | account display name                                                                                                            |
+| `conn_id`           | required (v2) | identifies which Connection (login) this account belongs to — lets you distinguish two logins to the same bank                  |
+| `currency`          | required      | ISO 4217 code (e.g. `"USD"`), or a URL for non-standard "currencies" (e.g. rewards points) that resolves to JSON `{name, abbr}` |
+| `balance`           | required      | current balance, numeric string                                                                                                 |
+| `balance-date`      | required      | Unix timestamp of when `balance`/`available-balance` were computed                                                              |
+| `available-balance` | optional      |                                                                                                                                 |
+| `transactions`      | optional      | array of Transaction objects, omitted if `balances-only=1`                                                                      |
+| `extra`             | optional      | institution-specific bag of extra fields                                                                                        |
 
 **Transaction object:**
 
-| Field | Required? | Notes |
-|---|---|---|
-| `id` | required | stable transaction identifier |
-| `posted` | required | Unix timestamp |
-| `amount` | required | numeric string; **positive = money deposited into the account**, negative = withdrawal/spend |
-| `description` | required | free-text description from the institution |
-| `transacted_at` | optional | when the transaction actually occurred, vs. `posted` |
-| `pending` | optional | boolean |
-| `extra` | optional | institution-specific extra data |
+| Field           | Required? | Notes                                                                                        |
+| --------------- | --------- | -------------------------------------------------------------------------------------------- |
+| `id`            | required  | stable transaction identifier                                                                |
+| `posted`        | required  | Unix timestamp                                                                               |
+| `amount`        | required  | numeric string; **positive = money deposited into the account**, negative = withdrawal/spend |
+| `description`   | required  | free-text description from the institution                                                   |
+| `transacted_at` | optional  | when the transaction actually occurred, vs. `posted`                                         |
+| `pending`       | optional  | boolean                                                                                      |
+| `extra`         | optional  | institution-specific extra data                                                              |
 
 There is **no standardized transaction category field**. SimpleFIN does not do categorization —
 any `category`/`merchant` normalization would have to be a schema/app-layer concern on top of
@@ -118,13 +118,13 @@ any `category`/`merchant` normalization would have to be a schema/app-layer conc
 
 **Connection object (v2):**
 
-| Field | Required? | Notes |
-|---|---|---|
-| `conn_id` | required | |
-| `name` | required | institution/connection display name |
-| `org_id` | required | |
-| `sfin_url` | required | the SimpleFIN server URL for this connection |
-| `org_url` | optional | |
+| Field      | Required? | Notes                                        |
+| ---------- | --------- | -------------------------------------------- |
+| `conn_id`  | required  |                                              |
+| `name`     | required  | institution/connection display name          |
+| `org_id`   | required  |                                              |
+| `sfin_url` | required  | the SimpleFIN server URL for this connection |
+| `org_url`  | optional  |                                              |
 
 **Errors:** structured objects with `code` (format `prefix.subcode`, prefix ∈ `gen`/`con`/`act`
 for general/connection/account scope — apps should fall back to treating unknown subcodes as the
@@ -176,7 +176,8 @@ Source: [SimpleFIN Bridge Developer Guide](https://beta-bridge.simplefin.org/inf
   - This is a flat account-level subscription (not metered per API call). Bridge's pricing page
     also states plan limits of **up to 25 institutions and 25 connected apps** per Bridge
     account.
-  Source: [beta-bridge.simplefin.org](https://beta-bridge.simplefin.org/).
+
+Source: [beta-bridge.simplefin.org](https://beta-bridge.simplefin.org/).
 
 ### 6. What an existing SimpleFIN setup already grants access to
 
@@ -193,7 +194,7 @@ Having already gone through Bridge's account-linking flow once means:
   credential — i.e., "having a SimpleFIN setup" reduces to "possessing one already-claimed
   Access URL string," which this app's backend would store as a secret and use directly. No
   per-request user interaction, redirect, or re-auth is required going forward.
-- If the Setup Token has not yet been claimed by *this* app, it must be redeemed (step 3 in
+- If the Setup Token has not yet been claimed by _this_ app, it must be redeemed (step 3 in
   section 1) before first use, and only once — attempting to reuse an already-claimed token
   fails with `403`.
 
@@ -244,6 +245,7 @@ net-worth tables):
 ## Sources
 
 Primary (official):
+
 - [simplefin.org](https://www.simplefin.org/) — protocol overview, mission, cost-of-protocol statement
 - [simplefin.org/protocol.html](https://www.simplefin.org/protocol.html) — SimpleFIN protocol v2 spec (endpoints, data shapes, errors)
 - [simplefin.org/protocol-v1.html](https://www.simplefin.org/protocol-v1.html) — protocol v1 spec, used for the v1→v2 diff

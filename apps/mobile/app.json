@@ -1,0 +1,10 @@
+{
+  "expo": {
+    "name": "ben-os",
+    "slug": "ben-os",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "platforms": ["ios", "android"]
+  }
+}
