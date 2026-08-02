@@ -178,10 +178,17 @@ institutions post transactions late — the overlap is free, since
 the window only has to exceed the gap between polls plus however late an institution posts.
 
 The **first** poll is the exception: against an empty database a 5-day window would mean history
-began five days ago, and no later poll would go back for the rest, so the first one asks for the
-full 90 days a single call may cover. That is a cold start, not a backfill — deeper history would
-need a separate job walking successive 90-day windows against the same daily budget, and how far
-back an institution will go varies anyway.
+began five days ago, and no later poll would go back for the rest, so the first one reaches back
+**45 days**.
+
+45 rather than the 90 a single call is permitted, because a 90-day poll works but comes back
+carrying `gen.api: Requested date range exceeds recommended range of 45 days. In the future, this
+may be capped.` — observed on the first live sync, and documented nowhere. Sitting inside the
+recommendation costs a month and a half of history once, and avoids depending on something Bridge
+has said it may stop allowing.
+
+Either way this is a cold start, not a backfill — deeper history would need a separate job walking
+successive windows against the same daily budget, and how far back an institution will go varies.
 
 Three behaviours worth knowing before reading the code:
 

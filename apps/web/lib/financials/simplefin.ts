@@ -15,6 +15,20 @@
 export const SIMPLEFIN_MAX_WINDOW_DAYS = 90;
 
 /**
+ * The widest window Bridge actually wants, as distinct from the widest it
+ * permits. A 90-day call succeeds but comes back carrying
+ *
+ *   gen.api: Requested date range exceeds recommended range of 45 days.
+ *            In the future, this may be capped.
+ *
+ * — observed on the first live poll, not documented anywhere. Treated as the
+ * ceiling for windows this app chooses for itself, while
+ * `SIMPLEFIN_MAX_WINDOW_DAYS` stays the hard guard against a caller asking for
+ * something Bridge would silently truncate.
+ */
+export const SIMPLEFIN_RECOMMENDED_WINDOW_DAYS = 45;
+
+/**
  * How far back each scheduled poll reaches. Bridge recommends overlapping
  * consecutive windows by ~5 days, because an institution can post a transaction
  * days after it happened — a non-overlapping window would step straight over it.

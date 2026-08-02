@@ -310,7 +310,7 @@ describe("pending transactions that disappear", () => {
 });
 
 describe("the first poll", () => {
-  it("reaches back the full 90 days, so history doesn't start five days ago", async () => {
+  it("reaches back 45 days, so history doesn't start five days ago", async () => {
     const fetch = stubFetch([chaseOnly()]);
     const client = createSimpleFinClient(TEST_ACCESS_URL, { fetch });
 
@@ -320,7 +320,10 @@ describe("the first poll", () => {
 
     const startDate = new URL(fetch.calls[0]).searchParams.get("start-date");
 
-    expect(Number(startDate)).toBe(Math.floor(new Date("2026-05-03T09:17:00Z").getTime() / 1000));
+    // 45 days before NOW — Bridge's recommended ceiling, not the 90 a call may
+    // technically carry. A 90-day window succeeds but is answered with a
+    // `gen.api` warning saying it may be capped in future.
+    expect(Number(startDate)).toBe(Math.floor(new Date("2026-06-17T09:17:00Z").getTime() / 1000));
   });
 
   it("falls back to the 5-day overlap once there is history to overlap with", async () => {
