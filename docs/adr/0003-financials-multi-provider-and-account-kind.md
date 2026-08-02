@@ -20,3 +20,13 @@ Decisions:
 - Every future provider (the eventual holdings provider included) plugs into `financials_connection`/`financials_account` via `provider` + `provider_conn_id`/`provider_account_id` rather than assuming SimpleFIN is the only source, so adding one doesn't require another rename pass.
 - `kind` has no relationship to which provider an account came from — a `'depository'` and an `'investment'` account can both come from SimpleFIN (SimpleFIN carries balance for either), or from different providers entirely. The two concepts are orthogonal.
 - The `financials_holding` shape (and whether it reuses `financials_transaction` for trade activity or needs its own table) is intentionally left open pending the holdings-provider research ticket — this ADR does not speculate on it.
+
+## Addendum: account uniqueness is scoped to the connection
+
+Decision 3 above says uniqueness semantics are unchanged by the rename, and names the transaction key while doing so. It left the _account_ key ambiguous: [ADR 0002](./0002-financials-schema.md) specified `simplefin_account_id text unique` — global — and renaming it to `provider_account_id` does not by itself say whether "global" survived generalization.
+
+Building the schema ([#23](https://github.com/bsim0927/ben-os/issues/23)) forced the question. **Resolved: `unique (connection_id, provider_account_id)`**, scoped rather than global, for the same reason decision 2 gave for scoping `financials_connection`'s key to the provider — two providers' account-id spaces are unrelated, and a global unique would invent a collision between a SimpleFIN account and a SnapTrade one that happened to share an id.
+
+This supersedes ADR 0002's `unique` on that column. Nothing else about the rename changes, and the transaction key is untouched: `(account_id, provider_transaction_id)`, exactly as decision 3 states.
+
+A global unique was considered and rejected on the above; scoping to `(provider, provider_account_id)` instead of the connection was also considered and rejected, because the connection already carries the provider, so the longer key would restate it without adding a constraint.
