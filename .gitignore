@@ -31,3 +31,5 @@ coverage/
 # local agent config
 .claude/settings.local.json
 .claude/worktrees/
+
+.idea
