@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from "vitest";
 
-import { isAuthorizedCronRequest } from "@/lib/cron";
+import { authorizeCronRequest } from "@/lib/cron";
 
 function requestWith(authorization?: string): Request {
   return new Request("https://ben-os.test/api/cron/financials-sync", {
@@ -13,38 +13,69 @@ afterEach(() => {
   delete process.env.CRON_SECRET;
 });
 
-describe("isAuthorizedCronRequest", () => {
+describe("authorizeCronRequest", () => {
   it("accepts the configured secret as a bearer token", () => {
     process.env.CRON_SECRET = "s3cret-value";
 
-    expect(isAuthorizedCronRequest(requestWith("Bearer s3cret-value"))).toBe(true);
+    expect(authorizeCronRequest(requestWith("Bearer s3cret-value"))).toEqual({ authorized: true });
   });
 
-  it("rejects a wrong secret", () => {
+  it("tolerates whitespace a dashboard paste left on either value", () => {
+    // The failure this prevents is invisible: a trailing newline on the stored
+    // secret makes the lengths differ, and the request looks simply wrong.
+    process.env.CRON_SECRET = "s3cret-value\n";
+
+    expect(authorizeCronRequest(requestWith("Bearer s3cret-value "))).toEqual({ authorized: true });
+  });
+
+  it("rejects a wrong secret, and says that is what happened", () => {
     process.env.CRON_SECRET = "s3cret-value";
 
-    expect(isAuthorizedCronRequest(requestWith("Bearer wrong-value"))).toBe(false);
+    const result = authorizeCronRequest(requestWith("Bearer wrong-value"));
+
+    expect(result.authorized).toBe(false);
+    expect(result).toMatchObject({ reason: expect.stringContaining("does not match") });
   });
 
   it("rejects a secret of a different length without throwing", () => {
     // timingSafeEqual throws on mismatched lengths; the length check in front of
-    // it is what keeps this a `false` rather than a 500.
+    // it is what keeps this a rejection rather than a 500.
     process.env.CRON_SECRET = "s3cret-value";
 
-    expect(isAuthorizedCronRequest(requestWith("Bearer short"))).toBe(false);
+    expect(authorizeCronRequest(requestWith("Bearer short")).authorized).toBe(false);
   });
 
-  it("rejects a missing or non-bearer Authorization header", () => {
+  it("distinguishes a missing header from a malformed one", () => {
     process.env.CRON_SECRET = "s3cret-value";
 
-    expect(isAuthorizedCronRequest(requestWith())).toBe(false);
-    expect(isAuthorizedCronRequest(requestWith("Basic s3cret-value"))).toBe(false);
-    expect(isAuthorizedCronRequest(requestWith("s3cret-value"))).toBe(false);
+    expect(authorizeCronRequest(requestWith())).toMatchObject({
+      reason: expect.stringContaining("No Authorization header"),
+    });
+    expect(authorizeCronRequest(requestWith("Basic s3cret-value"))).toMatchObject({
+      reason: expect.stringContaining("Bearer"),
+    });
   });
 
-  it("fails closed when no secret is configured", () => {
+  it("fails closed when no secret is configured, and names that as the cause", () => {
     // The dangerous misconfiguration: an unset secret must not read as "open".
-    expect(isAuthorizedCronRequest(requestWith("Bearer anything"))).toBe(false);
-    expect(isAuthorizedCronRequest(requestWith())).toBe(false);
+    // Naming it costs nothing — the endpoint is shut in this branch either way,
+    // and the operator is the only one who can act on knowing.
+    const result = authorizeCronRequest(requestWith("Bearer anything"));
+
+    expect(result.authorized).toBe(false);
+    expect(result).toMatchObject({ reason: expect.stringContaining("CRON_SECRET is not set") });
+  });
+
+  it("never puts the secret in the reason it gives back", () => {
+    process.env.CRON_SECRET = "super-secret-do-not-leak";
+
+    for (const request of [requestWith(), requestWith("Bearer nope"), requestWith("Basic x")]) {
+      const result = authorizeCronRequest(request);
+
+      expect(result.authorized).toBe(false);
+      if (!result.authorized) {
+        expect(result.reason).not.toContain("super-secret-do-not-leak");
+      }
+    }
   });
 });

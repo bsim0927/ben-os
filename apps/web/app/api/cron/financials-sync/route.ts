@@ -1,4 +1,4 @@
-import { isAuthorizedCronRequest } from "@/lib/cron";
+import { authorizeCronRequest } from "@/lib/cron";
 import { messageFor } from "@/lib/errors";
 import { financialsPool, withAuthorizedSession } from "@/lib/financials/db";
 import { createSimpleFinClient } from "@/lib/financials/simplefin";
@@ -19,8 +19,10 @@ export const maxDuration = 60;
  * over it would burn the request budget without fixing anything.
  */
 export async function GET(request: Request): Promise<Response> {
-  if (!isAuthorizedCronRequest(request)) {
-    return new Response(null, { status: 401 });
+  const auth = authorizeCronRequest(request);
+
+  if (!auth.authorized) {
+    return Response.json({ error: auth.reason }, { status: 401 });
   }
 
   const accessUrl = process.env.SIMPLEFIN_ACCESS_URL;
