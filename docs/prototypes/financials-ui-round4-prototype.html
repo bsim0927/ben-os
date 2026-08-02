@@ -1,0 +1,322 @@
+<title>Financials UI — Round 4: Cash Flow vs Balance Bridge</title>
+<style>
+  /* Round 4. Rounds 2-3 missed the actual point: the two accounts don't just
+     look different, they hold a different DATA TYPE. Chase is flow (income
+     minus expenses, categorized). Fidelity was asked for "holdings," but
+     SimpleFIN (ticket #2) gives balance + transactions only — no positions,
+     tickers, or share counts. So Fidelity's honest breakdown is a BRIDGE:
+     what moved the balance (contributions, dividends, market growth, fees),
+     not what's held. True per-security holdings are out of scope for v1
+     (would need a second data source) — see the map's Out of scope note.
+     Two calmer variants this round, ?variant=j|k, same Console shell:
+       J — Side-by-side: category bars (Chase) next to a balance bridge
+           (Fidelity), under a shared net-worth strip.
+       K — Stacked, single column, net worth spelled out as a literal
+           equation joining the two sections below it. */
+
+  :root { color-scheme: dark; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  button { font-family: inherit; }
+  :focus-visible { outline: 2px solid #38BDF8; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  body {
+    --bg: #0B0D10;
+    --panel: #14171B;
+    --panel-2: #191D22;
+    --panel-3: #1E232A;
+    --border: #232830;
+    --text: #E6E9ED;
+    --muted: #838C99;
+    --accent: #38BDF8;
+    --positive: #34D399;
+    --negative: #F87171;
+    --bank: #7DD3E8;
+    --invest: #D4A94C;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "SF Pro Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ============================= Shell (fixed) ============================= */
+  .sidebar { width: 232px; flex: none; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 20px 12px; gap: 28px; }
+  .wordmark { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; letter-spacing: 0.08em; color: var(--muted); padding: 0 8px; }
+  .wordmark b { color: var(--text); }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; font-size: 13.5px; color: var(--muted); border-left: 2px solid transparent; text-decoration: none; }
+  .nav-item svg { width: 16px; height: 16px; flex: none; }
+  .nav-item.is-active { color: var(--text); background: var(--panel-2); border-left-color: var(--accent); }
+  .nav-item.is-soon { opacity: 0.45; cursor: default; }
+  .nav-soon-tag { margin-left: auto; font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 6px; }
+  .sidebar-spacer { flex: 1; }
+  .account-chip { display: flex; align-items: center; gap: 10px; padding: 10px; border-top: 1px solid var(--border); }
+  .avatar { width: 26px; height: 26px; border-radius: 6px; background: var(--accent); color: #04121A; display: grid; place-items: center; font-size: 12px; font-weight: 700; flex: none; }
+  .account-chip .who { font-size: 12px; }
+  .account-chip .sub { font-size: 11px; color: var(--muted); }
+
+  main { flex: 1; min-width: 0; padding: 28px 36px 100px; }
+  .crumb-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .crumb { font-size: 12.5px; color: var(--muted); }
+  .crumb b { color: var(--text); font-weight: 500; }
+  .sync-chip { font-size: 11.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+
+  .fv { display: none; }
+  .fv.active { display: block; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .panel-eyebrow { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+  .panel-eyebrow .dot { width: 7px; height: 7px; border-radius: 2px; }
+  .panel-title { font-size: 15px; margin-bottom: 2px; }
+  .panel-sub { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+  .flow-stats { display: flex; gap: 18px; margin-bottom: 18px; }
+  .flow-stats .fs { }
+  .flow-stats .fs .k { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
+  .flow-stats .fs .v { font-size: 17px; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; }
+  .flow-stats .fs .v.pos { color: var(--positive); }
+  .flow-stats .fs .v.neg { color: var(--text); }
+
+  .cat-bars { display: flex; flex-direction: column; gap: 10px; }
+  .cat-bars .cb-row { display: grid; grid-template-columns: 100px 1fr 78px; align-items: center; gap: 10px; }
+  .cat-bars .cb-name { font-size: 12.5px; color: var(--muted); }
+  .cat-bars .cb-track { height: 8px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+  .cat-bars .cb-fill { height: 100%; border-radius: 4px; }
+  .cat-bars .cb-amt { font-size: 12.5px; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; text-align: right; }
+  .cat-bars .cb-pct { font-size: 10px; color: var(--muted); text-align: right; }
+
+  .bridge-chart { display: flex; align-items: flex-end; gap: 6px; height: 150px; margin-bottom: 14px; }
+  .bridge-chart .bcol { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+  .bridge-chart .btrack { position: relative; width: 100%; height: 140px; }
+  .bridge-chart .bbar { position: absolute; left: 8%; right: 8%; border-radius: 3px; }
+  .bridge-chart .bbar.start, .bridge-chart .bbar.end { background: var(--invest); opacity: 0.9; }
+  .bridge-chart .bbar.pos { background: var(--positive); }
+  .bridge-chart .bbar.neg { background: var(--negative); }
+  .bridge-chart .bval { font-size: 10px; font-variant-numeric: tabular-nums; color: var(--text); margin-bottom: 4px; white-space: nowrap; }
+  .bridge-chart .blabel { font-size: 10px; color: var(--muted); margin-top: 6px; text-align: center; }
+  .bridge-chart .connector { position: absolute; top: 0; height: 1px; border-top: 1px dashed var(--border); width: 100%; left: 50%; }
+
+  .relation-strip { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 4px 0 22px; font-size: 13px; color: var(--muted); }
+  .relation-strip .op { color: var(--muted); font-size: 16px; }
+  .relation-strip .term { display: flex; align-items: center; gap: 7px; color: var(--text); font-variant-numeric: tabular-nums; }
+  .relation-strip .term .dot { width: 8px; height: 8px; border-radius: 2px; }
+  .relation-strip .term b { font-family: ui-monospace, monospace; }
+  .relation-strip .total { font-size: 15px; }
+
+  /* ---- J: side by side ---- */
+  .fv-j .nw-strip { display: flex; align-items: center; justify-content: space-between; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 20px; margin-bottom: 20px; }
+  .fv-j .nw-strip .nw-amt { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 600; }
+  .fv-j .nw-strip .nw-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .fv-j .nw-strip .nw-delta { color: var(--positive); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .fv-j .split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .fv-j .split { grid-template-columns: 1fr; } }
+
+  /* ---- K: stacked ---- */
+  .fv-k .k-hero { text-align: center; margin-bottom: 10px; }
+  .fv-k .k-hero .amount { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 34px; font-weight: 600; }
+  .fv-k .k-hero .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+  .fv-k .sections { display: flex; flex-direction: column; gap: 18px; }
+
+  /* ============================= Prototype switcher ============================= */
+  #switcher { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: #111318; color: #F2F3F5; border-radius: 999px; padding: 6px 6px 6px 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08); font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px; z-index: 1000; }
+  #switcher .swlabel { min-width: 210px; text-align: center; font-variant-numeric: tabular-nums; }
+  #switcher .swlabel b { font-weight: 600; }
+  #switcher .swlabel span { color: #9198A6; margin-left: 6px; }
+  #switcher button.arrow { width: 30px; height: 30px; border-radius: 50%; border: none; background: rgba(255,255,255,0.08); color: inherit; cursor: pointer; display: grid; place-items: center; font-size: 15px; }
+  #switcher button.arrow:hover { background: rgba(255,255,255,0.16); }
+</style>
+
+<!-- ============================= Shell (fixed) ============================= -->
+<aside class="sidebar">
+  <div class="wordmark"><b>ben</b>/os</div>
+  <nav>
+    <a class="nav-item is-active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17l5-6 4 4 8-10"/><path d="M14 5h6v6"/></svg>Financials</a>
+    <a class="nav-item is-soon" href="#" aria-disabled="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18v12H3z"/><path d="M3 7l9 6 9-6"/></svg>Email <span class="nav-soon-tag">Soon</span></a>
+    <a class="nav-item is-soon" href="#" aria-disabled="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 3v3M16 3v3"/></svg>Calendar <span class="nav-soon-tag">Soon</span></a>
+    <a class="nav-item is-soon" href="#" aria-disabled="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>Notes <span class="nav-soon-tag">Soon</span></a>
+  </nav>
+  <div class="sidebar-spacer"></div>
+  <div class="account-chip"><div class="avatar">B</div><div><div class="who">Ben</div><div class="sub">Synced 2h ago</div></div></div>
+</aside>
+
+<main>
+  <div class="crumb-row">
+    <div class="crumb"><b>Financials</b> / Net worth</div>
+    <div class="sync-chip">2 accounts · synced 2h ago</div>
+  </div>
+
+  <!-- ============================= Variant J: Side by side ============================= -->
+  <div class="fv fv-j" data-key="j" data-name="Side by side — category bars + balance bridge">
+    <div class="nw-strip">
+      <div><div class="nw-label">Net worth</div><div class="nw-amt">$84,480.83</div></div>
+      <div class="nw-delta">+$1,850.00 (2.2%) this month</div>
+    </div>
+    <div class="split">
+      <div class="panel">
+        <div class="panel-eyebrow"><span class="dot" style="background:var(--bank);"></span>Chase Checking</div>
+        <div class="panel-title">Income &amp; expenses</div>
+        <div class="panel-sub">This month</div>
+        <div class="flow-stats">
+          <div class="fs"><div class="k">Income</div><div class="v pos">+$3,120.00</div></div>
+          <div class="fs"><div class="k">Expenses</div><div class="v">−$311.64</div></div>
+          <div class="fs"><div class="k">Net</div><div class="v pos">+$2,808.36</div></div>
+        </div>
+        <div class="cat-bars" id="j-catbars"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-eyebrow"><span class="dot" style="background:var(--invest);"></span>Fidelity Brokerage</div>
+        <div class="panel-title">What moved the balance</div>
+        <div class="panel-sub">This month · $70,930.73 → $72,140.73</div>
+        <div class="bridge-chart" id="j-bridge"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================= Variant K: Stacked with equation ============================= -->
+  <div class="fv fv-k" data-key="k" data-name="Stacked — net worth spelled out as an equation">
+    <div class="k-hero">
+      <div class="label">Net worth</div>
+      <div class="amount">$84,480.83</div>
+    </div>
+    <div class="relation-strip">
+      <span class="term"><span class="dot" style="background:var(--bank);"></span>Chase <b>$12,340.10</b></span>
+      <span class="op">+</span>
+      <span class="term"><span class="dot" style="background:var(--invest);"></span>Fidelity <b>$72,140.73</b></span>
+      <span class="op">=</span>
+      <span class="total"><b style="font-family: ui-monospace, monospace;">$84,480.83</b></span>
+    </div>
+    <div class="sections">
+      <div class="panel">
+        <div class="panel-eyebrow"><span class="dot" style="background:var(--bank);"></span>Chase Checking</div>
+        <div class="panel-title">Where it came from, where it went</div>
+        <div class="panel-sub">This month</div>
+        <div class="flow-stats">
+          <div class="fs"><div class="k">Income</div><div class="v pos">+$3,120.00</div></div>
+          <div class="fs"><div class="k">Expenses</div><div class="v">−$311.64</div></div>
+          <div class="fs"><div class="k">Net</div><div class="v pos">+$2,808.36</div></div>
+        </div>
+        <div class="cat-bars" id="k-catbars"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-eyebrow"><span class="dot" style="background:var(--invest);"></span>Fidelity Brokerage</div>
+        <div class="panel-title">What moved the balance</div>
+        <div class="panel-sub">This month · $70,930.73 → $72,140.73</div>
+        <div class="bridge-chart" id="k-bridge"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ============================= Switcher ============================= -->
+<div id="switcher">
+  <button class="arrow" id="sw-prev" aria-label="Previous variant">&#8249;</button>
+  <div class="swlabel" id="sw-label"></div>
+  <button class="arrow" id="sw-next" aria-label="Next variant">&#8250;</button>
+</div>
+
+<script>
+  (function () {
+    var CATS = [
+      { name: "Utilities", amount: 142.18, color: "#F472B6" },
+      { name: "Groceries", amount: 86.42, color: "#A78BFA" },
+      { name: "Shopping", amount: 64.30, color: "#22D3EE" },
+      { name: "Subscription", amount: 11.99, color: "#60A5FA" },
+      { name: "Dining", amount: 6.75, color: "#FBBF24" }
+    ];
+    var maxCat = Math.max.apply(null, CATS.map(function (c) { return c.amount; }));
+    var totalExpenses = CATS.reduce(function (s, c) { return s + c.amount; }, 0);
+
+    function fmt(amount) {
+      var abs = Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return (amount < 0 ? "−$" : "$") + abs;
+    }
+
+    function catBarsHTML() {
+      return CATS.map(function (c) {
+        var pct = (c.amount / maxCat) * 100;
+        var share = (c.amount / totalExpenses) * 100;
+        return '<div class="cb-row"><div class="cb-name">' + c.name + '</div>' +
+          '<div class="cb-track"><div class="cb-fill" style="width:' + pct + '%; background:' + c.color + ';"></div></div>' +
+          '<div><div class="cb-amt">' + fmt(c.amount) + '</div><div class="cb-pct">' + share.toFixed(0) + '%</div></div></div>';
+      }).join("");
+    }
+    document.getElementById("j-catbars").innerHTML = catBarsHTML();
+    document.getElementById("k-catbars").innerHTML = catBarsHTML();
+
+    // Bridge: Start -> +Contributions -> +Dividends -> +Growth -> -Fees -> End
+    var BASE = 70800, SPAN = 1500, H = 140;
+    function yOf(v) { return H - ((v - BASE) / SPAN) * H; }
+    var start = 70930.73;
+    var afterContrib = start + 1000.00;
+    var afterDiv = afterContrib + 178.40;
+    var afterGrowth = afterDiv + 50.10;
+    var end = afterGrowth - 18.50; // 72140.73
+
+    var steps = [
+      { label: "Start", value: start, kind: "start", top: yOf(start), height: H - yOf(start) },
+      { label: "Contrib.", value: 1000.00, kind: "pos", top: yOf(afterContrib), height: yOf(start) - yOf(afterContrib), display: "+" + fmt(1000.00) },
+      { label: "Dividends", value: 178.40, kind: "pos", top: yOf(afterDiv), height: yOf(afterContrib) - yOf(afterDiv), display: "+" + fmt(178.40) },
+      { label: "Growth", value: 50.10, kind: "pos", top: yOf(afterGrowth), height: yOf(afterDiv) - yOf(afterGrowth), display: "+" + fmt(50.10) },
+      { label: "Fees", value: -18.50, kind: "neg", top: yOf(afterGrowth), height: yOf(end) - yOf(afterGrowth), display: "−" + fmt(18.50) },
+      { label: "End", value: end, kind: "end", top: yOf(end), height: H - yOf(end) }
+    ];
+
+    function bridgeHTML() {
+      return steps.map(function (s) {
+        var barClass = s.kind === "start" || s.kind === "end" ? (s.kind === "start" ? "start" : "end") : s.kind;
+        var display = s.display || fmt(s.value);
+        return '<div class="bcol"><div class="bval">' + display + '</div>' +
+          '<div class="btrack"><div class="bbar ' + barClass + '" style="top:' + s.top + 'px; height:' + Math.max(s.height, 2) + 'px;"></div></div>' +
+          '<div class="blabel">' + s.label + '</div></div>';
+      }).join("");
+    }
+    document.getElementById("j-bridge").innerHTML = bridgeHTML();
+    document.getElementById("k-bridge").innerHTML = bridgeHTML();
+
+    // ============================= Switcher =============================
+    var variants = [
+      { key: "j", name: "Side by side" },
+      { key: "k", name: "Stacked equation" }
+    ];
+
+    function currentKey() {
+      var params = new URLSearchParams(window.location.search);
+      var v = params.get("variant");
+      return variants.some(function (x) { return x.key === v; }) ? v : "j";
+    }
+
+    function render(key) {
+      document.querySelectorAll(".fv").forEach(function (el) { el.classList.toggle("active", el.dataset.key === key); });
+      var meta = variants.filter(function (x) { return x.key === key; })[0];
+      document.getElementById("sw-label").innerHTML = "<b>" + meta.key.toUpperCase() + "</b><span>" + meta.name + "</span>";
+    }
+
+    function setKey(key) {
+      var params = new URLSearchParams(window.location.search);
+      params.set("variant", key);
+      history.replaceState(null, "", "?" + params.toString());
+      render(key);
+    }
+
+    function cycle(delta) {
+      var idx = variants.findIndex(function (x) { return x.key === currentKey(); });
+      var next = variants[(idx + delta + variants.length) % variants.length];
+      setKey(next.key);
+    }
+
+    document.getElementById("sw-prev").addEventListener("click", function () { cycle(-1); });
+    document.getElementById("sw-next").addEventListener("click", function () { cycle(1); });
+    document.addEventListener("keydown", function (e) {
+      var tag = (document.activeElement && document.activeElement.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || (document.activeElement && document.activeElement.isContentEditable)) return;
+      if (e.key === "ArrowLeft") cycle(-1);
+      if (e.key === "ArrowRight") cycle(1);
+    });
+
+    render(currentKey());
+  })();
+</script>
