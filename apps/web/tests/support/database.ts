@@ -72,11 +72,27 @@ const FINANCIALS_TABLES = [
  * Truncate rather than roll back a wrapping transaction: the sync job runs its
  * own transactions, and nesting those inside a test-owned one would quietly
  * convert them to no-ops — hiding the very commit boundaries under test.
+ *
+ * The opt-in is the point, not a workaround. `guard_truncate` refuses to
+ * truncate a financials table, because the only things that ever want to are a
+ * mistake or a test pointed at the wrong database — and this suite is the
+ * second one. Asking explicitly, per transaction, is what distinguishes it from
+ * the first. `set local` means the guard is back on by the next statement.
  */
 export async function resetFinancials(): Promise<void> {
-  await asSuperuser((query) =>
-    query(`truncate ${FINANCIALS_TABLES.join(", ")} restart identity cascade`),
-  );
+  await asSuperuser(async (query) => {
+    await query("begin");
+
+    try {
+      await query("set local ben_os.allow_bulk_delete = 'on'");
+      await query(`truncate ${FINANCIALS_TABLES.join(", ")} restart identity cascade`);
+      await query("commit");
+    } catch (cause) {
+      await query("rollback").catch(() => {});
+
+      throw cause;
+    }
+  });
 }
 
 export async function countRows(table: string): Promise<number> {

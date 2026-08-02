@@ -24,3 +24,19 @@ table must follow are in `docs/adr/0001-baseline-supabase-schema-conventions.md`
 > This project stopped being a scratch database on 2026-08-02. Destructive SQL loses transaction
 > history that cannot be re-fetched, because Bridge only serves a bounded recent window. Prefer
 > additive migrations, and confirm before any `truncate`/`drop` touching `financials_*`.
+
+Database guards enforce that (`20260802205533_financials_destructive_guards.sql`): `truncate` on a
+`financials_*` table, `drop` of one, and any single `delete` of more than 100 rows all raise. If a
+destructive statement fails with "Refusing to…", **that is the guard working — do not route around
+it.** Stop and ask, unless the user has just asked for exactly that operation. When they have:
+
+```sql
+begin;
+set local ben_os.allow_bulk_delete = 'on';
+-- the statement
+commit;
+```
+
+`set local` scopes the opt-in to that one transaction. Never set it session-wide, and never disable
+or drop the triggers to get a statement through — the guard is cheap to satisfy honestly and its
+whole value is that bypassing it has to be a decision someone made on purpose.

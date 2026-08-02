@@ -73,6 +73,23 @@ holds `is_authorized()`, `set_updated_at()`, and the five `financials_*` tables.
 > since 2026-08-02. Destructive SQL now costs transaction history that cannot be re-fetched, because
 > Bridge only serves a bounded recent window — prefer additive migrations.
 
+`20260802205533_financials_destructive_guards.sql` makes that harder to do by accident: `truncate` on
+a `financials_*` table, `drop` of one, and any single `delete` of more than 100 rows each raise. The
+sync's own pruning removes a handful of rows and is unaffected.
+
+It is a tripwire, not a permission boundary — `postgres` owns these tables and an owner can disable a
+trigger in one statement. What it removes is the _accidental_ version of each. Deliberate
+maintenance opts in for one transaction at a time:
+
+```sql
+begin;
+set local ben_os.allow_bulk_delete = 'on';
+-- the destructive statement
+commit;
+```
+
+`set local` means the guard is back on for the next statement and can't be left off by mistake.
+
 Remaining setup — dashboard settings that can't live in this repo:
 
 1. Create a Google OAuth client (Google Cloud Console → Credentials), with
