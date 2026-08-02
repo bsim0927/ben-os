@@ -158,15 +158,22 @@ leak must not also be a bank leak.
 
 ### The scheduled sync
 
-`apps/web/vercel.json` runs `/api/cron/financials-sync` hourly, at **minute 37**. Both halves are
-deliberate: hourly lands on Bridge's ~24 requests/day budget, and an off-the-hour minute is what
-Bridge asks for to spread load. Note that hourly sits _at_ the budget rather than under it, so a
-manual re-run spends headroom Bridge only informally offers ("a little leeway"); if warnings start
-appearing in `errlist`, widening the interval is the first lever.
+`apps/web/vercel.json` runs `/api/cron/financials-sync` **once a day, at 11:37 UTC**. The odd minute
+is what Bridge asks for, to keep clients off the top of the hour.
+
+Daily rather than hourly for two reasons. The binding one is that **Vercel's Hobby plan permits only
+daily cron**, and rejects a more frequent expression at deploy time — this is a build error, not a
+silent downgrade. The other is that daily is the better fit anyway: net worth is a trend, one
+observation a day draws it fine, and it leaves Bridge's ~24 requests/day budget almost untouched
+instead of sitting exactly at the ceiling with nothing spare for a manual re-run.
+
+If you ever want it more frequent, the choice is Vercel Pro, or a scheduled GitHub Actions workflow
+that `curl`s the route with `CRON_SECRET` — the route doesn't care who calls it.
 
 Each poll fetches an overlapping **5-day** window rather than "everything since last sync", because
 institutions post transactions late — the overlap is free, since
-`(account_id, provider_transaction_id)` dedupes it.
+`(account_id, provider_transaction_id)` dedupes it. Five days comfortably covers a daily cadence:
+the window only has to exceed the gap between polls plus however late an institution posts.
 
 The **first** poll is the exception: against an empty database a 5-day window would mean history
 began five days ago, and no later poll would go back for the rest, so the first one asks for the
@@ -195,10 +202,10 @@ conflict do update` list, so a poll can't undo a categorization or reopen a clos
   it. Sync deliberately won't infer closure from an account's absence: a broken connection returns
   no accounts either, and guessing wrong would drop a live account out of net worth.
 
-> [!NOTE]
-> Vercel's Hobby plan runs cron jobs at most **once a day** and caps them at two. On Hobby the
-> hourly schedule above is silently reduced to daily — the sync still works, it just samples net
-> worth once a day. Pro is what makes the 5-day overlap and hourly cadence behave as designed.
+> [!IMPORTANT]
+> Vercel's Hobby plan allows at most **two** cron jobs, each running **at most once a day**. A
+> sub-daily expression fails the deploy outright with "This cron expression would run more than once
+> per day" — so `vercel.json` is not a free place to raise the cadence.
 
 ### Testing the sync
 
