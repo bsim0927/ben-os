@@ -135,7 +135,7 @@ export function AreaChart({
                 className="fill-muted"
                 textAnchor="end"
               >
-                {formatX(endpoint!.datum.x)}
+                {formatX(points[points.length - 1].datum.x)}
               </text>
             ) : null}
           </>

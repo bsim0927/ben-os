@@ -8,7 +8,7 @@
  * component that consumes it is then only markup.
  *
  * No chart library: the one chart this app needs is an area with gridlines and
- * an emphasised endpoint, and the dependency would cost more than the ~80 lines
+ * an emphasised endpoint, and the dependency would cost more than the arithmetic
  * below.
  */
 
@@ -55,16 +55,16 @@ export type AreaChartInput = {
   width: number;
   height: number;
   padding: Padding;
-  /** Gridlines to aim for; the nice-number rounding may land on one either side. */
-  tickCount?: number;
 };
+
+/** Gridlines to aim for; the nice-number rounding may land on one either side. */
+const TICK_COUNT = 4;
 
 export function areaChartGeometry({
   data,
   width,
   height,
   padding,
-  tickCount = 4,
 }: AreaChartInput): AreaChartGeometry {
   const left = padding.left;
   const right = width - padding.right;
@@ -78,7 +78,7 @@ export function areaChartGeometry({
   const scale = niceScale(
     Math.min(...data.map((datum) => datum.y)),
     Math.max(...data.map((datum) => datum.y)),
-    tickCount,
+    TICK_COUNT,
   );
 
   const xMin = Math.min(...data.map((datum) => datum.x));

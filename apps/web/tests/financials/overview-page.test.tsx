@@ -258,6 +258,33 @@ describe("the financials overview", () => {
     ]);
   });
 
+  it("keeps showing the real balances when the chosen range has no snapshots in it", async () => {
+    // Sync has been broken for months. 1M has nothing to draw — but the money is
+    // still there, and a headline of $0.00 would be confidently wrong.
+    stubSupabase({
+      financials_account: { data: accounts, error: null },
+      financials_balance_snapshot: {
+        data: [
+          snapshot("chase", "2026-01-05", "2000.00"),
+          snapshot("fidelity", "2026-01-05", "18000.00"),
+        ],
+        error: null,
+      },
+    });
+
+    await renderPage();
+
+    selectRange("1M");
+
+    expect(screen.getByText(/No balance snapshots in the last 1 month/)).toBeInTheDocument();
+    expect(equationTerms()).toEqual([
+      ["Chase", "$2,000.00"],
+      ["Fidelity", "$18,000.00"],
+      ["Net worth", "$20,000.00"],
+    ]);
+    expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
+  });
+
   it("says plainly that there is nothing to chart before the first sync", async () => {
     stubSupabase({
       financials_account: { data: accounts, error: null },

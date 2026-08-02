@@ -112,6 +112,23 @@ describe("buildNetWorthSeries", () => {
     expect(series[1]).toEqual({ date: "2026-08-02", total: 1_000, byAccount: { chase: 1_000 } });
   });
 
+  it("rounds each term to cents, so the terms sum to the total exactly", () => {
+    // The equation strip prints these terms next to that total and claims they
+    // add up; sub-cent balances must not make it a claim off by a penny.
+    const series = buildNetWorthSeries({
+      accounts: [chase, fidelity],
+      snapshots: [
+        snapshot("chase", "2026-08-01", "1000.555"),
+        snapshot("fidelity", "2026-08-01", "2000.555"),
+      ],
+    });
+
+    const point = series[0];
+    const summed = Object.values(point.byAccount).reduce((sum, value) => sum + value, 0);
+
+    expect(Math.round(summed * 100) / 100).toBe(point.total);
+  });
+
   it("reads numeric columns that arrive as strings", () => {
     const series = buildNetWorthSeries({
       accounts: [chase],

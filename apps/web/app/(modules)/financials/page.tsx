@@ -62,7 +62,11 @@ export default async function FinancialsOverview() {
   const accountRefs: AccountRef[] = (accounts.data ?? []).map((row) => ({
     id: row.id,
     name: row.name,
-    status: row.status,
+    // `status` is a free `text` column with a check constraint behind it; this
+    // is the boundary that turns it into the two states the domain has. Anything
+    // unrecognised counts as active — dropping a live account out of net worth
+    // is the worse of the two ways to be wrong.
+    status: row.status === "closed" ? "closed" : "active",
   }));
 
   const snapshotInputs: SnapshotInput[] = (snapshots.data ?? []).map((row) => ({

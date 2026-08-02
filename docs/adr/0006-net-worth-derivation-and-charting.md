@@ -24,7 +24,11 @@ The net worth chart ([#24](https://github.com/bsim0927/ben-os/issues/24)) is the
 
    Ranges are plain day counts (30/90/365), not calendar months. Predictable, and the axis is in days anyway.
 
-6. **The window's endpoints are the figures; the window's span is the change.** The headline and the equation strip always show the latest point, which is the same in every range. What the toggle changes is the chart's extent and the reported change across it — otherwise the control would be pure zoom with nothing to say.
+6. **The headline and the equation strip read off the full series; only the chart reads off the window.** Every non-empty window ends on the latest point, so in normal operation the two are the same figure. They come apart when a window is empty — sync broken for longer than the range, or an account newer than it — and reading the headline off the window there would print a confident `$0.00` for money that is still in the account. So the figures track the latest snapshot that exists, and the chart says it has nothing to draw for that range.
+
+   What the toggle changes is the chart's extent and the reported change across it — otherwise the control would be pure zoom with nothing to say.
+
+   Terms are rounded to cents before they are summed, so the strip's terms add up to the total printed beside them. An equation that is visibly off by a penny discredits the number it is there to explain.
 
 7. **The chart is hand-rolled SVG, with the geometry split from the markup.** `lib/chart.ts` turns data into paths, gridlines, and an endpoint; `components/area-chart.tsx` is only markup. Everything hard is arithmetic — the y scale rounding outward to readable gridline values, the flat-series case that would otherwise divide by zero, points spaced by x value — and it is all testable without a DOM.
 
@@ -48,3 +52,4 @@ The net worth chart ([#24](https://github.com/bsim0927/ben-os/issues/24)) is the
 - Later Financials surfaces — the Chase flow view's context sparkline, the Fidelity balance bridge — have a chart seam to build on, and `lib/chart.ts` is domain-free enough to serve them.
 - Mixed-currency accounts render totals without a currency symbol rather than stamping a sum with a currency it does not mean. Summing across currencies is still wrong; v1 has one, and this is the honest placeholder until it doesn't.
 - The raw-data view moved off the module root to `/financials/raw` to make room for the overview, and stays linked from it.
+- **The page-level test stubs the Supabase client rather than seeding the real Postgres**, unlike the sync tests. This is a gap, and a known one: the sync talks to Postgres over `pg`, which the test harness can start, while a page reads through PostgREST over HTTP, which it cannot. Closing it means standing up PostgREST in the harness — worth doing once a second module has pages, not for this one. Until then the read path (`order`/`limit`) and this page's RLS behaviour are unasserted, and the RLS backstop is covered only by the sync and guard suites.

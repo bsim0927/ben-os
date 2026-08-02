@@ -27,11 +27,14 @@ const RANGE_DAYS: Record<Exclude<NetWorthRange, "ALL">, number> = {
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+/** The two states ADR 0002 gives an account. Closure is soft, and it is the user's to record. */
+export type AccountStatus = "active" | "closed";
+
 export type AccountRef = {
   id: string;
   name: string;
-  /** `'active' | 'closed'` — a closed account stops contributing, see below. */
-  status: string;
+  /** A closed account stops contributing, see `buildNetWorthSeries`. */
+  status: AccountStatus;
 };
 
 /** Numerics arrive from PostgREST as strings; normalising is this module's job, not its callers'. */
@@ -112,19 +115,29 @@ export function buildNetWorthSeries({
       if (balance === undefined) continue;
       if (account.status === "closed" && day > (lastReportedDay.get(account.id) ?? day)) continue;
 
-      byAccount[account.id] = balance;
-      total += balance;
+      // Each term is rounded before it is summed, so the equation strip's terms
+      // add up to the total it prints — the one claim that strip exists to make.
+      const contribution = round(balance);
+
+      byAccount[account.id] = contribution;
+      total += contribution;
     }
 
     return { date: day, total: round(total), byAccount };
   });
 }
 
-/** The slice of the series a range toggle shows. `ALL` is every point there is. */
+/**
+ * The slice of the series a range toggle shows. `ALL` is every point there is.
+ *
+ * `now` is required rather than defaulted: the caller is a client component, and
+ * a default `new Date()` here would read the browser's clock and disagree with
+ * the server's render — a hydration mismatch waiting for midnight (ADR 0006).
+ */
 export function windowSeries(
   series: readonly NetWorthPoint[],
   range: NetWorthRange,
-  now: Date = new Date(),
+  now: Date,
 ): NetWorthPoint[] {
   if (range === "ALL") return [...series];
 
@@ -186,9 +199,13 @@ function byBalanceDate(a: SnapshotInput, b: SnapshotInput): number {
 }
 
 /**
+ * The `YYYY-MM-DD` day a point is keyed by, and the two conversions to and from
+ * it, live together here — the day is the series' unit, and letting each caller
+ * roll its own `slice(0, 10)` is how the representation drifts.
+ *
  * UTC throughout, matching the sync's own timestamps. Reinterpreting a
- * `balance-date` in the viewer's zone would shuffle snapshots across the
- * day boundary and move points on the chart for no reason.
+ * `balance-date` in the viewer's zone would shuffle snapshots across the day
+ * boundary and move points on the chart for no reason.
  */
 function utcDay(value: string): string | null {
   const date = new Date(value);
@@ -196,6 +213,16 @@ function utcDay(value: string): string | null {
   if (Number.isNaN(date.getTime())) return null;
 
   return date.toISOString().slice(0, 10);
+}
+
+/** Milliseconds at the day's UTC start — what a time-spaced x-axis plots against. */
+export function dayToTimestamp(day: string): number {
+  return new Date(`${day}T00:00:00Z`).getTime();
+}
+
+/** The inverse, for reading a day back off an x coordinate. */
+export function timestampToDay(timestamp: number): string {
+  return new Date(timestamp).toISOString().slice(0, 10);
 }
 
 function toNumber(value: number | string): number | null {

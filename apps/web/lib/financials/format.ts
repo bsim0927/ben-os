@@ -12,20 +12,7 @@
  * that isn't ISO 4217 falls back to a plain grouped number.
  */
 export function formatAmount(value: number, currency?: string): string {
-  if (Number.isNaN(value)) return "—";
-
-  if (isIsoCurrency(currency)) {
-    try {
-      return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(value);
-    } catch {
-      // Falls through to the plain rendering below.
-    }
-  }
-
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return format(value, currency, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /** For a change, where the `+` is as much of the meaning as the digits. */
@@ -37,27 +24,13 @@ export function formatSignedAmount(value: number, currency?: string): string {
 
 /** Axis labels, where six figures of precision would collide with the next tick. */
 export function formatCompactAmount(value: number, currency?: string): string {
-  if (Number.isNaN(value)) return "—";
-
-  // `minimumFractionDigits: 0` is doing real work: compact notation otherwise
-  // pins one fraction digit and every round gridline reads `$100.0K`.
-  const options: Intl.NumberFormatOptions = {
+  return format(value, currency, {
     notation: "compact",
     maximumFractionDigits: 1,
+    // `minimumFractionDigits: 0` is doing real work: compact notation otherwise
+    // pins one fraction digit and every round gridline reads `$100.0K`.
     minimumFractionDigits: 0,
-  };
-
-  if (isIsoCurrency(currency)) {
-    try {
-      return new Intl.NumberFormat("en-US", { ...options, style: "currency", currency }).format(
-        value,
-      );
-    } catch {
-      // Falls through to the plain rendering below.
-    }
-  }
-
-  return new Intl.NumberFormat("en-US", options).format(value);
+  });
 }
 
 export function formatPercent(ratio: number): string {
@@ -97,6 +70,25 @@ export function formatDay(day: string): string {
   }).format(date);
 }
 
-function isIsoCurrency(currency: string | undefined): currency is string {
-  return currency !== undefined && /^[A-Z]{3}$/.test(currency);
+/**
+ * The one place that decides whether a currency symbol is safe to attach.
+ *
+ * Two layers, because either can fail: the pattern rejects the URLs SimpleFIN
+ * allows, and the `catch` covers a three-letter code that is well-formed but
+ * isn't a currency Intl knows.
+ */
+function format(value: number, currency: string | undefined, options: Intl.NumberFormatOptions) {
+  if (Number.isNaN(value)) return "—";
+
+  if (currency !== undefined && /^[A-Z]{3}$/.test(currency)) {
+    try {
+      return new Intl.NumberFormat("en-US", { ...options, style: "currency", currency }).format(
+        value,
+      );
+    } catch {
+      // Falls through to the plain rendering below.
+    }
+  }
+
+  return new Intl.NumberFormat("en-US", options).format(value);
 }

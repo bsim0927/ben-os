@@ -13,10 +13,13 @@ import {
 } from "@/lib/financials/format";
 import {
   changeOver,
+  dayToTimestamp,
   equationFor,
   NET_WORTH_RANGES,
+  timestampToDay,
   windowSeries,
   type AccountRef,
+  type NetWorthEquation,
   type NetWorthPoint,
   type NetWorthRange,
 } from "@/lib/financials/net-worth";
@@ -53,7 +56,11 @@ export function NetWorthHero({ accounts, series, today, currency }: NetWorthHero
     [series, range, today],
   );
 
-  const latest = windowed[windowed.length - 1];
+  // Off the *full* series, not the window. Every non-empty window ends on the
+  // latest point anyway — but a window can be empty (sync broken for longer than
+  // the range, or an account newer than it), and reading the headline off an
+  // empty window would print a confident $0.00 for money that is still there.
+  const latest = series[series.length - 1];
   const equation = equationFor(latest, accounts);
   const change = changeOver(windowed);
 
@@ -100,14 +107,22 @@ export function NetWorthHero({ accounts, series, today, currency }: NetWorthHero
       </header>
 
       <div className="border-hairline bg-panel rounded-md border p-4">
-        <AreaChart
-          data={windowed.map((point) => ({ x: dayToX(point.date), y: point.total }))}
-          caption={`Net worth by day, ${rangeLabel(range)}`}
-          valueLabel="Net worth"
-          formatValue={(value) => formatAmount(value, currency)}
-          formatTick={(value) => formatCompactAmount(value, currency)}
-          formatX={(x) => formatDay(xToDay(x))}
-        />
+        {windowed.length === 0 ? (
+          // The balances below are still the latest known ones; it is this
+          // window that has nothing in it, and saying so beats an empty box.
+          <p className="text-muted py-8 text-center text-[13px]">
+            No balance snapshots in the last {rangeLabel(range)}.
+          </p>
+        ) : (
+          <AreaChart
+            data={windowed.map((point) => ({ x: dayToTimestamp(point.date), y: point.total }))}
+            caption={`Net worth by day, ${rangeLabel(range)}`}
+            valueLabel="Net worth"
+            formatValue={(value) => formatAmount(value, currency)}
+            formatTick={(value) => formatCompactAmount(value, currency)}
+            formatX={(x) => formatDay(timestampToDay(x))}
+          />
+        )}
       </div>
 
       <EquationStrip equation={equation} asOf={latest?.date} currency={currency} />
@@ -157,7 +172,7 @@ function EquationStrip({
   asOf,
   currency,
 }: {
-  equation: ReturnType<typeof equationFor>;
+  equation: NetWorthEquation;
   asOf: string | undefined;
   currency?: string;
 }) {
@@ -207,16 +222,4 @@ function Operator({ children }: { children: React.ReactNode }) {
 
 function rangeLabel(range: NetWorthRange): string {
   return { "1M": "1 month", "3M": "3 months", "1Y": "1 year", ALL: "all time" }[range];
-}
-
-/**
- * Days as milliseconds, so the chart spaces points by real elapsed time and a
- * poll the sync missed reads as the gap it was.
- */
-function dayToX(day: string): number {
-  return new Date(`${day}T00:00:00Z`).getTime();
-}
-
-function xToDay(x: number): string {
-  return new Date(x).toISOString().slice(0, 10);
 }
