@@ -53,12 +53,22 @@ The allowed address is hardcoded in both halves — `ALLOWED_EMAIL` in `apps/web
 string literal inside `is_authorized()`. **They are a pair: changing the authorized account means
 editing both.** There is no `public.profile` table; auth relies on `auth.users` plus the JWT claim.
 
-### Setting up a Supabase project
+### The Supabase project
 
-Steps that can't live in this repo, because they're dashboard settings:
+The hosted project already exists: ref **`fcqoliweobjhpgqfgxao`** (`us-east-2`), at
+`https://fcqoliweobjhpgqfgxao.supabase.co`.
+
+> [!IMPORTANT]
+> **Its schema is not the one this repo describes.** The project predates these ADRs and still holds
+> the earlier design. It needs a full wipe and clean-slate redesign before the Financials tables
+> land — treat everything currently in `public` as disposable. There is no data worth preserving,
+> which is exactly why [#20](https://github.com/bsim0927/ben-os/issues/20) specifies a redesign from
+> scratch rather than a migration path.
+
+Remaining setup — dashboard settings that can't live in this repo:
 
 1. Create a Google OAuth client (Google Cloud Console → Credentials), with
-   `https://<project-ref>.supabase.co/auth/v1/callback` as an authorized redirect URI.
+   `https://fcqoliweobjhpgqfgxao.supabase.co/auth/v1/callback` as an authorized redirect URI.
 2. In the Supabase dashboard, enable **Google** under Authentication → Providers and paste the
    client ID and secret. Leave email/password sign-up disabled — it would let someone register the
    allowed address directly and walk past the whole restriction.
@@ -72,6 +82,34 @@ Steps that can't live in this repo, because they're dashboard settings:
 
 `supabase/config.toml` mirrors 1–3 for local development (`supabase start`), reading the Google
 credentials from a root `.env` — see `.env.example`.
+
+### Inspecting and changing the database
+
+**Use the Supabase MCP server.** It is the supported way to read schema, run SQL, and apply
+migrations against this project — prefer it over dashboard clicking or ad-hoc `psql`, so that what
+was actually run is visible in the transcript.
+
+Install once, at user scope, pinned to this project:
+
+```sh
+claude mcp add supabase --scope user \
+  -e PATH=<node-bin-dir>:/usr/local/bin:/usr/bin:/bin \
+  -e SUPABASE_ACCESS_TOKEN=<personal-access-token> \
+  -- npx -y @supabase/mcp-server-supabase@latest --project-ref=fcqoliweobjhpgqfgxao
+```
+
+Four things that are easy to get wrong:
+
+- The credential is a **personal access token** (`sbp_…`, from Supabase → Account → Access Tokens),
+  _not_ a project API key. It grants account-wide authority — `--project-ref` is what confines the
+  server to ben-os. It lives in `~/.claude.json` and must never be committed.
+- `-e PATH=…` is required wherever Node comes from nvm. `npx` is a `#!/usr/bin/env node` script and
+  a spawned MCP server doesn't inherit an interactive shell's PATH, so without it the server dies as
+  an opaque `Connection closed`. Point it at the directory holding `node` (`nvm which current`).
+- MCP servers connect at **session start**. After installing, restart Claude Code — and note that
+  subagents inherit the parent session's connections, so spawning one won't pick up a new server.
+- It runs **without** `--read-only`, so it can apply migrations and DDL. That's deliberate, and
+  worth remembering before pointing it at anything.
 
 ## Adding a module
 
