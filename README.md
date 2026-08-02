@@ -45,6 +45,9 @@ places:
 - **App layer** — `apps/web/proxy.ts` runs on every request and turns away anyone who isn't the
   allowed account; `app/(modules)/layout.tsx` checks again before rendering the shell. Two checks,
   because a routing mistake in one should cost a redirect, not the app's privacy.
+  Two prefixes are exempt, and only two: `/auth`, which is the sign-in round trip itself, and
+  `/api/cron`, reached by a scheduler that has no Google session and never can. Cron routes gate on
+  a bearer secret instead (`lib/cron.ts`), and fail closed when it isn't set.
 - **Database** — `public.is_authorized()` (`supabase/migrations/`) compares the JWT's `email` claim
   against the same address. Per [ADR 0001](docs/adr/0001-baseline-supabase-schema-conventions.md),
   every module table's RLS policy calls it, so data stays protected even if the app layer is wrong.
@@ -161,15 +164,24 @@ leak must not also be a bank leak.
 
 `apps/web/vercel.json` runs `/api/cron/financials-sync` hourly, at **minute 37**. Both halves are
 deliberate: hourly lands on Bridge's ~24 requests/day budget, and an off-the-hour minute is what
-Bridge asks for to spread load. Each poll fetches an overlapping **5-day** window rather than
-"everything since last sync", because institutions post transactions late — the overlap is free,
-since `(account_id, provider_transaction_id)` dedupes it. A single call is capped at 90 days, and
-the client throws rather than let Bridge silently truncate a wider one.
+Bridge asks for to spread load. Note that hourly sits _at_ the budget rather than under it, so a
+manual re-run spends headroom Bridge only informally offers ("a little leeway"); if warnings start
+appearing in `errlist`, widening the interval is the first lever.
+
+Each poll fetches an overlapping **5-day** window rather than "everything since last sync", because
+institutions post transactions late — the overlap is free, since
+`(account_id, provider_transaction_id)` dedupes it.
+
+The **first** poll is the exception: against an empty database a 5-day window would mean history
+began five days ago, and no later poll would go back for the rest, so the first one asks for the
+full 90 days a single call may cover. That is a cold start, not a backfill — deeper history would
+need a separate job walking successive 90-day windows against the same daily budget, and how far
+back an institution will go varies anyway.
 
 Three behaviours worth knowing before reading the code:
 
 - **One transaction per connection, not per poll.** Postgres aborts a whole transaction on the first
-  failed statement, so a shared one would let a single broken institution roll back everybody
+  failed statement, so a shared one would let a single broken connection roll back everybody
   else's writes. Per-connection units are what make `errlist`'s partial failures survivable.
 - **The job runs under RLS.** It connects with `DATABASE_URL`, then drops to `authenticated` and
   presents the authorized email as a JWT claim (`lib/financials/db.ts`). The service role would have
@@ -178,6 +190,9 @@ Three behaviours worth knowing before reading the code:
 - **Sync never writes user-owned columns.** `financials_account.kind`, `.status`, and
   `financials_transaction.category_id` are set by the user and pointedly absent from every `on
 conflict do update` list, so a poll can't undo a categorization or reopen a closed account.
+  Nothing yet _sets_ `status = 'closed'` — that is a user action, arriving with the UI that offers
+  it. Sync deliberately won't infer closure from an account's absence: a broken connection returns
+  no accounts either, and guessing wrong would drop a live account out of net worth.
 
 > [!NOTE]
 > Vercel's Hobby plan runs cron jobs at most **once a day** and caps them at two. On Hobby the

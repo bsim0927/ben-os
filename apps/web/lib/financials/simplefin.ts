@@ -73,10 +73,18 @@ export type SimpleFinAccountSet = {
 
 export type FetchLike = typeof globalThis.fetch;
 
-export type AccountSetQuery = {
+/**
+ * A span of time a poll covers. Named because three layers pass it around — the
+ * client asks for it, the sync reports it, and the prune predicate is scoped to
+ * it — and they must agree on which end is exclusive.
+ */
+export type PollWindow = {
   startDate: Date;
   /** Exclusive, matching the protocol's `end-date`. */
   endDate: Date;
+};
+
+export type AccountSetQuery = PollWindow & {
   pending?: boolean;
 };
 
@@ -247,19 +255,16 @@ function accountsUrl(
 }
 
 /**
- * The window a scheduled poll asks for: the last `overlapDays`, ending now.
+ * The window a scheduled poll asks for: the last `days`, ending now.
  *
  * Deliberately not "since the last successful sync" — a transaction can post
  * days late, so anchoring to last-sync would skip anything that appeared behind
  * the cursor. Re-fetching the overlap is cheap because
  * `(account_id, provider_transaction_id)` dedupes it.
  */
-export function pollWindow(
-  now: Date,
-  overlapDays: number = SIMPLEFIN_POLL_OVERLAP_DAYS,
-): { startDate: Date; endDate: Date } {
+export function pollWindow(now: Date, days: number = SIMPLEFIN_POLL_OVERLAP_DAYS): PollWindow {
   return {
-    startDate: new Date(now.getTime() - overlapDays * MS_PER_DAY),
+    startDate: new Date(now.getTime() - days * MS_PER_DAY),
     endDate: now,
   };
 }
@@ -272,12 +277,29 @@ export function fromEpochSeconds(seconds: number): Date {
   return new Date(seconds * 1000);
 }
 
-/** `gen` errors are whole-poll; `con`/`act` name the connection or account they spoil. */
+/**
+ * `gen` errors are whole-poll; `con`/`act` name the connection or account they
+ * spoil.
+ *
+ * The code wins over the ids when it is one the spec defines, because an error
+ * may legitimately carry both: a `gen.*` quota warning that happens to mention a
+ * `conn_id` is still poll-wide, and filing it under one bank would bury a
+ * warning about the whole subscription inside that bank's ledger. Only when the
+ * prefix is absent or unrecognised do the ids decide — the spec's own
+ * instruction for unknown codes.
+ */
 export function errorScope(error: SimpleFinError): "general" | "connection" | "account" {
-  const prefix = error.code?.split(".")[0];
+  switch (error.code?.split(".")[0]) {
+    case "gen":
+      return "general";
+    case "con":
+      return "connection";
+    case "act":
+      return "account";
+  }
 
-  if (prefix === "con" || error.conn_id) return "connection";
-  if (prefix === "act" || error.account_id) return "account";
+  if (error.conn_id) return "connection";
+  if (error.account_id) return "account";
 
   return "general";
 }

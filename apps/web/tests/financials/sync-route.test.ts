@@ -1,17 +1,18 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { withAuthorizedSession, financialsPool, syncSimpleFin, simpleFinClientFor } = vi.hoisted(
+const { withAuthorizedSession, financialsPool, syncSimpleFin, createSimpleFinClient } = vi.hoisted(
   () => ({
     withAuthorizedSession: vi.fn(),
     financialsPool: vi.fn(),
     syncSimpleFin: vi.fn(),
-    simpleFinClientFor: vi.fn(),
+    createSimpleFinClient: vi.fn(),
   }),
 );
 
 vi.mock("@/lib/financials/db", () => ({ withAuthorizedSession, financialsPool }));
-vi.mock("@/lib/financials/sync", () => ({ syncSimpleFin, simpleFinClientFor }));
+vi.mock("@/lib/financials/sync", () => ({ syncSimpleFin }));
+vi.mock("@/lib/financials/simplefin", () => ({ createSimpleFinClient }));
 
 import { GET } from "@/app/api/cron/financials-sync/route";
 

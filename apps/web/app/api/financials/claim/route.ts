@@ -1,5 +1,6 @@
 import { claimSetupToken } from "@/lib/financials/simplefin";
 import { isAuthorizedEmail } from "@/lib/auth";
+import { messageFor } from "@/lib/errors";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -50,9 +51,6 @@ export async function POST(request: Request): Promise<Response> {
       next: "Set SIMPLEFIN_ACCESS_URL to this value. It is not stored — claiming again will fail.",
     });
   } catch (cause) {
-    return Response.json(
-      { error: cause instanceof Error ? cause.message : String(cause) },
-      { status: 502 },
-    );
+    return Response.json({ error: messageFor(cause) }, { status: 502 });
   }
 }

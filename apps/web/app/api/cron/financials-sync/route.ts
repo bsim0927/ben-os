@@ -1,6 +1,8 @@
 import { isAuthorizedCronRequest } from "@/lib/cron";
+import { messageFor } from "@/lib/errors";
 import { financialsPool, withAuthorizedSession } from "@/lib/financials/db";
-import { simpleFinClientFor, syncSimpleFin } from "@/lib/financials/sync";
+import { createSimpleFinClient } from "@/lib/financials/simplefin";
+import { syncSimpleFin } from "@/lib/financials/sync";
 
 /** `pg` needs a real socket, which the edge runtime doesn't have. */
 export const runtime = "nodejs";
@@ -32,7 +34,7 @@ export async function GET(request: Request): Promise<Response> {
 
   try {
     const result = await withAuthorizedSession(financialsPool(), (unitOfWork) =>
-      syncSimpleFin({ client: simpleFinClientFor(accessUrl), unitOfWork }),
+      syncSimpleFin({ client: createSimpleFinClient(accessUrl), unitOfWork }),
     );
 
     return Response.json(result);
@@ -40,9 +42,6 @@ export async function GET(request: Request): Promise<Response> {
     // Only reached when the poll itself failed — the fetch, or the database.
     // 502 rather than 500 so an alert can tell "SimpleFIN or Postgres is down"
     // apart from "this route is broken".
-    return Response.json(
-      { error: cause instanceof Error ? cause.message : String(cause) },
-      { status: 502 },
-    );
+    return Response.json({ error: messageFor(cause) }, { status: 502 });
   }
 }

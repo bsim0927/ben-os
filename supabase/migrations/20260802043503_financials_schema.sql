@@ -79,6 +79,16 @@ create table public.financials_account (
   updated_at timestamptz not null default now(),
   constraint financials_account_kind_check check (kind in ('depository', 'investment')),
   constraint financials_account_status_check check (status in ('active', 'closed')),
+  -- DEVIATION from ADR 0002, which specified `simplefin_account_id text unique`
+  -- (global), and which ADR 0003 renamed without restating. Scoped to the
+  -- connection instead, for the same reason ADR 0003 gave for scoping
+  -- financials_connection's key to the provider: two providers' account-id
+  -- spaces are unrelated, and a global unique would invent a collision between
+  -- a SimpleFIN account and a SnapTrade one that happen to share an id.
+  --
+  -- Flagged rather than assumed: ADR 0001 says deviating "requires revisiting
+  -- this ADR, not a one-off table", so this is raised on issue #23 for ADR 0003
+  -- to absorb or overrule.
   constraint financials_account_provider_account_id_key unique (connection_id, provider_account_id)
 );
 
@@ -130,7 +140,7 @@ create table public.financials_transaction (
     unique (account_id, provider_transaction_id)
 );
 
--- Both read paths the module has: a account's transactions newest-first, and
+-- Both read paths the module has: an account's transactions newest-first, and
 -- spend grouped by category.
 create index financials_transaction_account_posted_idx
   on public.financials_transaction (account_id, posted desc);

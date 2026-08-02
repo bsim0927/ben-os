@@ -265,6 +265,36 @@ describe("pending transactions that disappear", () => {
     expect(await countRows("public.financials_transaction")).toBe(1);
   });
 
+  it("does not prune when the account came back with no transaction feed at all", async () => {
+    // `transactions` omitted is the provider declining to answer — a degraded
+    // account alongside an act.* error, or a balances-only response. Treating
+    // that as "nothing here" would delete every pending row the account has.
+    const withFeed = chaseOnly([transaction({ id: "txn-pending", pending: true })]);
+    const withoutFeed = accountSet({
+      connections: [CHASE_CONN],
+      accounts: [account({ transactions: undefined })],
+    });
+
+    const { two } = await runTwoPolls(withFeed, withoutFeed);
+
+    expect(two.connections[0].pendingPruned).toBe(0);
+    expect(await countRows("public.financials_transaction")).toBe(1);
+    // The balance is still an answer, so the snapshot is still written.
+    expect(await countRows("public.financials_balance_snapshot")).toBe(2);
+  });
+
+  it("does prune when the account came back with an empty feed", async () => {
+    // An empty array is the provider answering "nothing in this window", which
+    // is exactly the evidence an omitted feed isn't.
+    const { two } = await runTwoPolls(
+      chaseOnly([transaction({ id: "txn-pending", pending: true })]),
+      chaseOnly([]),
+    );
+
+    expect(two.connections[0].pendingPruned).toBe(1);
+    expect(await countRows("public.financials_transaction")).toBe(0);
+  });
+
   it("leaves a pending transaction older than the fetched window alone", async () => {
     // Outside the window it was never looked for, so its absence says nothing.
     const stale = transaction({
@@ -276,6 +306,36 @@ describe("pending transactions that disappear", () => {
     await runTwoPolls(chaseOnly([stale]), chaseOnly([]));
 
     expect(await countRows("public.financials_transaction")).toBe(1);
+  });
+});
+
+describe("the first poll", () => {
+  it("reaches back the full 90 days, so history doesn't start five days ago", async () => {
+    const fetch = stubFetch([chaseOnly()]);
+    const client = createSimpleFinClient(TEST_ACCESS_URL, { fetch });
+
+    await withAuthorizedSession(testPool(), (unitOfWork) =>
+      syncSimpleFin({ client, unitOfWork, now: NOW }),
+    );
+
+    const startDate = new URL(fetch.calls[0]).searchParams.get("start-date");
+
+    expect(Number(startDate)).toBe(Math.floor(new Date("2026-05-03T09:17:00Z").getTime() / 1000));
+  });
+
+  it("falls back to the 5-day overlap once there is history to overlap with", async () => {
+    await runSync([chaseOnly()]);
+
+    const fetch = stubFetch([chaseOnly()]);
+    const client = createSimpleFinClient(TEST_ACCESS_URL, { fetch });
+
+    await withAuthorizedSession(testPool(), (unitOfWork) =>
+      syncSimpleFin({ client, unitOfWork, now: NOW }),
+    );
+
+    const startDate = new URL(fetch.calls[0]).searchParams.get("start-date");
+
+    expect(Number(startDate)).toBe(Math.floor(new Date("2026-07-27T09:17:00Z").getTime() / 1000));
   });
 });
 

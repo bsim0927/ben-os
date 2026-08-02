@@ -4,21 +4,25 @@
  * One `GET /accounts` call covers every connection on the subscription, so the
  * job's shape is: fetch once, then fan the response out per connection. The
  * fanning-out is where the care is — a poll routinely succeeds for one
- * institution and fails for another, and the whole point of `errlist` is that
+ * connection and fails for another, and the whole point of `errlist` is that
  * those are separate outcomes.
  */
 
 import {
-  createSimpleFinClient,
   errorScope,
   fromEpochSeconds,
   pollWindow,
+  SIMPLEFIN_MAX_WINDOW_DAYS,
+  SIMPLEFIN_POLL_OVERLAP_DAYS,
+  type PollWindow,
   type SimpleFinAccount,
   type SimpleFinClient,
   type SimpleFinConnection,
   type SimpleFinError,
   type SimpleFinTransaction,
 } from "./simplefin";
+import { messageFor } from "@/lib/errors";
+
 import type { UnitOfWork } from "./db";
 import { createFinancialsStore, type FinancialsStore, type TransactionInput } from "./store";
 
@@ -51,21 +55,33 @@ export type SyncOptions = {
   /** One transaction per connection — see `UnitOfWork` for why that granularity. */
   unitOfWork: UnitOfWork;
   now?: Date;
+  /** Steady-state reach. Defaults to Bridge's recommended ~5-day overlap. */
   overlapDays?: number;
+  /** Reach on the very first poll, when there is no history to overlap with. */
+  firstPollDays?: number;
 };
-
-/** Convenience wrapper for callers holding an Access URL rather than a client. */
-export function simpleFinClientFor(accessUrl: string): SimpleFinClient {
-  return createSimpleFinClient(accessUrl);
-}
 
 export async function syncSimpleFin({
   client,
   unitOfWork,
   now = new Date(),
-  overlapDays,
+  overlapDays = SIMPLEFIN_POLL_OVERLAP_DAYS,
+  firstPollDays = SIMPLEFIN_MAX_WINDOW_DAYS,
 }: SyncOptions): Promise<SyncResult> {
-  const window = pollWindow(now, overlapDays);
+  // A 5-day overlap is the right steady-state reach, but it is the wrong first
+  // reach: applied to an empty database it would mean the account's history
+  // began five days ago, and no later poll would ever go back and find the rest.
+  // The first poll therefore asks for the widest window a single call may cover.
+  //
+  // This is not a backfill — Bridge caps one call at 90 days and institutions
+  // vary in how far they will backfill anyway, so deeper history would need a
+  // separate job walking successive windows against the same daily budget.
+  const isFirstPoll = await unitOfWork((query) =>
+    createFinancialsStore(query)
+      .hasAnyTransactions()
+      .then((any) => !any),
+  );
+  const window = pollWindow(now, isFirstPoll ? firstPollDays : overlapDays);
 
   // Every row this run touches is stamped with the same instant, which is what
   // makes "not seen this run" a decidable question during pruning.
@@ -87,7 +103,7 @@ export async function syncSimpleFin({
   const results: ConnectionSyncResult[] = [];
 
   for (const connId of connIds) {
-    const meta = connectionsByConnId.get(connId);
+    const providerConnection = connectionsByConnId.get(connId);
     const accounts = accountsByConn.get(connId) ?? [];
     const connErrors = errors.byConn.get(connId) ?? [];
 
@@ -96,7 +112,7 @@ export async function syncSimpleFin({
         syncConnection({
           store: createFinancialsStore(query),
           connId,
-          meta,
+          providerConnection,
           accounts,
           window,
           syncedAt,
@@ -105,24 +121,24 @@ export async function syncSimpleFin({
 
       results.push({
         providerConnId: connId,
-        name: meta?.name ?? connId,
+        name: providerConnection?.name ?? connId,
         status: "synced",
         errors: connErrors,
         ...counts,
       });
     } catch (cause) {
-      // Caught per connection, deliberately: one institution's broken data must
-      // not cost every other institution its sync.
+      // Caught per connection, deliberately: one connection's broken data must
+      // not cost every other connection its sync.
       results.push({
         providerConnId: connId,
-        name: meta?.name ?? connId,
+        name: providerConnection?.name ?? connId,
         status: "failed",
         accounts: 0,
         transactionsUpserted: 0,
         pendingPruned: 0,
         snapshotsWritten: 0,
         errors: connErrors,
-        failure: cause instanceof Error ? cause.message : String(cause),
+        failure: messageFor(cause),
       });
     }
   }
@@ -141,16 +157,16 @@ export async function syncSimpleFin({
 async function syncConnection({
   store,
   connId,
-  meta,
+  providerConnection,
   accounts,
   window,
   syncedAt,
 }: {
   store: FinancialsStore;
   connId: string;
-  meta: SimpleFinConnection | undefined;
+  providerConnection: SimpleFinConnection | undefined;
   accounts: SimpleFinAccount[];
-  window: { startDate: Date; endDate: Date };
+  window: PollWindow;
   syncedAt: Date;
 }) {
   const connectionId = await store.upsertConnection({
@@ -159,9 +175,11 @@ async function syncConnection({
     // A connection known only from an account's `conn_id` has no name to show;
     // the id is a worse label than the institution's name but better than a
     // missing row.
-    name: meta?.name ?? connId,
-    orgId: meta?.org_id ?? null,
-    extra: meta ? { sfin_url: meta.sfin_url, org_url: meta.org_url ?? null } : null,
+    name: providerConnection?.name ?? connId,
+    orgId: providerConnection?.org_id ?? null,
+    extra: providerConnection
+      ? { sfin_url: providerConnection.sfin_url, org_url: providerConnection.org_url ?? null }
+      : null,
   });
 
   let transactionsUpserted = 0;
@@ -190,14 +208,25 @@ async function syncConnection({
     });
     snapshotsWritten += 1;
 
+    if (account.transactions === undefined) {
+      // The account came back carrying balances but no transaction feed at all —
+      // what a `balances-only` fetch returns, and what a degraded account can
+      // return alongside an `act.*` error. Its balance is still worth a
+      // snapshot, but pruning must not run: an omitted feed is not the provider
+      // saying "nothing here", it is the provider not answering the question.
+      // An empty array *is* an answer, and does prune.
+      continue;
+    }
+
     transactionsUpserted += await store.upsertTransactions(
       accountId,
-      (account.transactions ?? []).map(toTransactionInput),
+      account.transactions.map(toTransactionInput),
       syncedAt,
     );
 
-    // Only for accounts this poll actually returned. An account missing from the
-    // response was never looked at, so nothing about it can be pruned.
+    // Only for accounts this poll actually returned, and only over the window it
+    // asked about. An account missing from the response was never looked at, so
+    // nothing about it can be pruned.
     pendingPruned += await store.prunePendingTransactions(accountId, window, syncedAt);
   }
 

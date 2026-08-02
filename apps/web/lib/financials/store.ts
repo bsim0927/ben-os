@@ -9,7 +9,9 @@
  * are the SQL itself.
  */
 
-export type QueryResult = { rows: Record<string, unknown>[]; rowCount?: number | null };
+import type { PollWindow } from "./simplefin";
+
+export type QueryResult = { rows: Record<string, unknown>[] };
 export type QueryFn = (text: string, params?: unknown[]) => Promise<QueryResult>;
 
 export type ConnectionInput = {
@@ -52,6 +54,21 @@ export type FinancialsStore = ReturnType<typeof createFinancialsStore>;
 
 export function createFinancialsStore(query: QueryFn) {
   return {
+    /**
+     * Whether this database has ever recorded a transaction — the signal the
+     * sync uses to tell a first poll from a routine one. Deliberately not "are
+     * there accounts": an account row can exist from a poll that returned
+     * balances and no feed, which is exactly when the wide first window is still
+     * owed.
+     */
+    async hasAnyTransactions(): Promise<boolean> {
+      const { rows } = await query(
+        "select exists (select 1 from public.financials_transaction) as any_rows",
+      );
+
+      return rows[0].any_rows === true;
+    },
+
     async upsertConnection(input: ConnectionInput): Promise<string> {
       const { rows } = await query(
         `insert into public.financials_connection (provider, provider_conn_id, name, org_id, extra)
@@ -175,7 +192,7 @@ export function createFinancialsStore(query: QueryFn) {
      */
     async prunePendingTransactions(
       accountId: string,
-      window: { startDate: Date; endDate: Date },
+      window: PollWindow,
       syncedAt: Date,
     ): Promise<number> {
       const { rows } = await query(

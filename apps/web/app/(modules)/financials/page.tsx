@@ -111,16 +111,7 @@ export default async function FinancialsRawData() {
             row.kind,
             row.status,
             <Amount key="b" value={row.balance} currency={row.currency} signed={false} />,
-            row.available_balance === null ? (
-              "—"
-            ) : (
-              <Amount
-                key="a"
-                value={row.available_balance}
-                currency={row.currency}
-                signed={false}
-              />
-            ),
+            <OptionalAmount key="a" value={row.available_balance} currency={row.currency} />,
             formatTimestamp(row.balance_date),
           ])}
           empty="No accounts synced yet."
@@ -133,11 +124,7 @@ export default async function FinancialsRawData() {
           rows={(snapshots.data ?? []).map((row) => [
             row.financials_account?.name ?? "—",
             <Amount key="b" value={row.balance} signed={false} />,
-            row.available_balance === null ? (
-              "—"
-            ) : (
-              <Amount key="a" value={row.available_balance} signed={false} />
-            ),
+            <OptionalAmount key="a" value={row.available_balance} />,
             formatTimestamp(row.balance_date),
           ])}
           empty="No balance snapshots yet."
@@ -215,6 +202,13 @@ function Table({
       </table>
     </div>
   );
+}
+
+/** SimpleFIN makes `available-balance` optional, and an absent one is not a zero. */
+function OptionalAmount({ value, currency }: { value: number | string | null; currency?: string }) {
+  if (value === null) return <>&mdash;</>;
+
+  return <Amount value={value} currency={currency} signed={false} />;
 }
 
 /**

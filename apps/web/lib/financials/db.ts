@@ -24,8 +24,8 @@ import type { QueryFn } from "./store";
  *
  * The sync job's unit is a single connection, not the whole poll. That is a
  * correctness requirement rather than a preference: Postgres aborts an entire
- * transaction on the first failed statement, so one institution's bad data
- * inside a shared transaction would take every other institution's writes down
+ * transaction on the first failed statement, so one connection's bad data
+ * inside a shared transaction would take every other connection's writes down
  * with it — exactly the failure per-connection isolation exists to prevent.
  */
 export type UnitOfWork = <T>(body: (query: QueryFn) => Promise<T>) => Promise<T>;

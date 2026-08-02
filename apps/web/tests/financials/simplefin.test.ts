@@ -169,5 +169,13 @@ describe("errorScope", () => {
     expect(errorScope({ msg: "x", conn_id: "c" })).toBe("connection");
     expect(errorScope({ msg: "x", account_id: "a" })).toBe("account");
     expect(errorScope({ msg: "x" })).toBe("general");
+    expect(errorScope({ code: "wat.unknown", msg: "x", conn_id: "c" })).toBe("connection");
+  });
+
+  it("lets a recognised code outrank an id the error also carries", () => {
+    // A quota warning is about the whole subscription even when it happens to
+    // name a connection. Filing it under one bank would bury it there.
+    expect(errorScope({ code: "gen.quota", msg: "x", conn_id: "c" })).toBe("general");
+    expect(errorScope({ code: "con.disconnected", msg: "x", account_id: "a" })).toBe("connection");
   });
 });
