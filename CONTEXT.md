@@ -14,15 +14,18 @@ _Avoid_: Owner, admin — this app has no multi-tenant or role concept, there is
 
 ### Financials module
 
+**Provider**:
+The external data source a connection authenticates against (e.g. SimpleFIN; a future brokerage-holdings provider). Every connection belongs to exactly one provider.
+
 **Connection**:
-A single SimpleFIN login/institution link (SimpleFIN's `conn_id`). One connection can expose multiple accounts; the same institution can have more than one connection if linked more than once.
+A single login/institution link to a specific provider (e.g. SimpleFIN's `conn_id`). One connection can expose multiple accounts; the same institution can have more than one connection if linked more than once.
 _Avoid_: Institution, bank — a connection is one authenticated link to an institution, not the institution itself.
 
 **Account**:
-A single financial account (checking, savings, credit card, etc.) exposed by a connection, with a live balance synced from SimpleFIN.
+A single financial account (checking, savings, credit card, brokerage, etc.) exposed by a connection, with a live balance synced from its provider. Distinguished by `kind` (`'depository' | 'investment'`), which is user-set — no provider signals account type natively.
 
 **Balance snapshot**:
-A point-in-time record of an account's balance as reported by a SimpleFIN poll — the basis for net worth history, distinct from the account's current balance.
+A point-in-time record of an account's balance as reported by a provider poll — the basis for net worth history, distinct from the account's current balance.
 _Avoid_: Balance (ambiguous between "the account's current balance" and "a historical snapshot")
 
 **Category**:
