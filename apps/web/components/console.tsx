@@ -1,10 +1,30 @@
-/** Shared pieces of the Console identity, used by both the shell and the login page. */
+/** Shared pieces of the Console identity, used by the shell, the login page, and modules. */
 
 export function Wordmark() {
   return (
     <p className="text-muted font-mono text-[13px] tracking-[0.08em]">
       <b className="text-ink font-semibold">ben</b>/os
     </p>
+  );
+}
+
+/**
+ * The uppercase micro-label that heads a section. `as` picks the heading level
+ * so the identity doesn't force a document outline on its callers.
+ */
+export function MicroLabel({
+  children,
+  as: Tag = "h2",
+  className = "",
+}: {
+  children: React.ReactNode;
+  as?: "h1" | "h2" | "h3";
+  className?: string;
+}) {
+  return (
+    <Tag className={`text-muted text-[11px] tracking-[0.08em] uppercase ${className}`.trim()}>
+      {children}
+    </Tag>
   );
 }
 
