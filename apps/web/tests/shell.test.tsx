@@ -1,8 +1,9 @@
-import type { User } from "@supabase/supabase-js";
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ALLOWED_EMAIL } from "@/lib/auth";
+
+import { fakeUser } from "./support/user";
 
 import ShellLayout from "@/app/(modules)/layout";
 
@@ -20,8 +21,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient }));
 vi.mock("next/navigation", () => ({ redirect, usePathname }));
 
 function signedInAs(email: string | null, metadata: Record<string, unknown> = {}) {
-  const user =
-    email === null ? null : ({ id: "user-1", email, user_metadata: metadata } as unknown as User);
+  const user = email === null ? null : fakeUser(email, metadata);
 
   createClient.mockResolvedValue({
     auth: { getUser: async () => ({ data: { user }, error: null }) },
@@ -109,7 +109,7 @@ describe("the shell, for the authorized account", () => {
   it("names the signed-in account in the sidebar footer", async () => {
     await renderShell();
 
-    const account = within(screen.getByTestId("account-chip"));
+    const account = within(screen.getByTestId("user-chip"));
 
     expect(account.getByText("Ben Simmons")).toBeInTheDocument();
     expect(account.getByTestId("avatar")).toHaveTextContent("B");
@@ -120,7 +120,7 @@ describe("the shell, for the authorized account", () => {
 
     await renderShell();
 
-    const account = within(screen.getByTestId("account-chip"));
+    const account = within(screen.getByTestId("user-chip"));
 
     expect(account.getByText(ALLOWED_EMAIL)).toBeInTheDocument();
   });

@@ -1,10 +1,11 @@
 // @vitest-environment node
-import type { User } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ALLOWED_EMAIL } from "@/lib/auth";
 import { updateSession } from "@/lib/supabase/middleware";
+
+import { fakeUser } from "./support/user";
 
 const { createServerClient } = vi.hoisted(() => ({ createServerClient: vi.fn() }));
 
@@ -12,7 +13,7 @@ vi.mock("@supabase/ssr", () => ({ createServerClient }));
 
 /** Stand in for whoever the session cookies resolve to on this request. */
 function signedInAs(email: string | null) {
-  const user = email === null ? null : ({ id: "user-1", email } as User);
+  const user = email === null ? null : fakeUser(email);
 
   createServerClient.mockReturnValue({
     auth: { getUser: async () => ({ data: { user }, error: null }) },

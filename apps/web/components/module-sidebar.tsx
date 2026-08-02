@@ -3,27 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { Wordmark } from "@/components/console";
+import type { AuthorizedUser } from "@/lib/auth";
 import { findModule, modules, type ModuleEntry } from "@/lib/modules";
-
-export type Account = {
-  name: string;
-  initial: string;
-  /** Freshness of the data behind the console, shown under the account name. */
-  lastSynced: string;
-};
 
 /**
  * The persistent left rail. Its contents are entirely a function of the module
  * registry — this component knows how a module looks, never which ones exist.
+ *
+ * `lastSynced` is passed in rather than read here: the shell's server layout is
+ * where real sync state will come from once a module has any.
  */
-export function ModuleSidebar({ account }: { account: Account }) {
+export function ModuleSidebar({ user, lastSynced }: { user: AuthorizedUser; lastSynced: string }) {
   const active = findModule(usePathname());
 
   return (
     <aside className="border-hairline bg-panel flex w-[232px] flex-none flex-col gap-7 border-r px-3 py-5">
-      <p className="text-muted px-2 font-mono text-[13px] tracking-[0.08em]">
-        <b className="text-ink font-semibold">ben</b>/os
-      </p>
+      <div className="px-2">
+        <Wordmark />
+      </div>
 
       <nav aria-label="Modules">
         <ul className="flex flex-col gap-0.5">
@@ -36,18 +34,18 @@ export function ModuleSidebar({ account }: { account: Account }) {
       <div className="flex-1" />
 
       <div
-        data-testid="account-chip"
+        data-testid="user-chip"
         className="border-hairline flex items-center gap-2.5 border-t px-2 pt-3"
       >
         <span
           data-testid="avatar"
           className="bg-accent text-bg grid size-[26px] flex-none place-items-center rounded-md text-[12px] font-bold"
         >
-          {account.initial}
+          {user.initial}
         </span>
         <span className="min-w-0">
-          <span className="text-ink block truncate text-[12px]">{account.name}</span>
-          <span className="text-muted block text-[11px]">{account.lastSynced}</span>
+          <span className="text-ink block truncate text-[12px]">{user.name}</span>
+          <span className="text-muted block text-[11px]">{lastSynced}</span>
         </span>
       </div>
     </aside>
@@ -59,7 +57,7 @@ function ModuleNavItem({ entry, isActive }: { entry: ModuleEntry; isActive: bool
   // the console is for, not only what has shipped.
   const soon = entry.status === "soon";
 
-  const shared = [
+  const itemClassName = [
     "flex items-center gap-2.5 rounded-md border-l-2 px-2.5 py-2 text-[13.5px]",
     isActive ? "border-l-accent bg-panel-2 text-ink" : "border-l-transparent text-muted",
   ].join(" ");
@@ -87,9 +85,9 @@ function ModuleNavItem({ entry, isActive }: { entry: ModuleEntry; isActive: bool
       className={soon ? "opacity-45" : undefined}
     >
       {soon ? (
-        <span className={shared}>{contents}</span>
+        <span className={itemClassName}>{contents}</span>
       ) : (
-        <Link href={entry.href} className={`${shared} hover:bg-panel-2 hover:text-ink`}>
+        <Link href={entry.href} className={`${itemClassName} hover:bg-panel-2 hover:text-ink`}>
           {contents}
         </Link>
       )}

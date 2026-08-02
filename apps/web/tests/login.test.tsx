@@ -1,8 +1,9 @@
-import type { User } from "@supabase/supabase-js";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ALLOWED_EMAIL } from "@/lib/auth";
+
+import { fakeUser } from "./support/user";
 
 import LoginPage from "@/app/login/page";
 
@@ -15,7 +16,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: createBrowserClient }));
 
 function signedInAs(email: string | null) {
-  const user = email === null ? null : ({ id: "user-1", email } as User);
+  const user = email === null ? null : fakeUser(email);
 
   createClient.mockResolvedValue({
     auth: { getUser: async () => ({ data: { user }, error: null }) },

@@ -13,7 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const base = deploymentOrigin(request, origin);
+  const base = siteOrigin(origin);
 
   if (!code) {
     return NextResponse.redirect(`${base}/login?error=signin_failed`);
@@ -40,16 +40,15 @@ export async function GET(request: Request) {
 }
 
 /**
- * Behind Vercel's proxy the request's own origin is the internal one, so
- * redirecting to it would bounce the user somewhere they can't reach. Locally
- * there's no proxy and the request origin is already correct.
+ * Where to send the user once sign-in resolves.
+ *
+ * Behind a proxy the request's own origin can be the internal one, which the
+ * user can't reach. The fix is configuration, not the `x-forwarded-host` header
+ * that Supabase's guide reaches for — that header is attacker-settable, and
+ * trusting it would hand anyone the post-sign-in redirect target.
  */
-function deploymentOrigin(request: Request, origin: string): string {
-  const forwardedHost = request.headers.get("x-forwarded-host");
+function siteOrigin(origin: string): string {
+  const configured = process.env.NEXT_PUBLIC_SITE_URL;
 
-  if (process.env.NODE_ENV === "development" || !forwardedHost) {
-    return origin;
-  }
-
-  return `https://${forwardedHost}`;
+  return configured ? configured.replace(/\/+$/, "") : origin;
 }

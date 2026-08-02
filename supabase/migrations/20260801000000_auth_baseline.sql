@@ -20,7 +20,10 @@ as $$
   -- lives in version-controlled SQL so it can only change through a reviewed
   -- migration. Its app-layer twin is ALLOWED_EMAIL in apps/web/lib/auth.ts —
   -- the two are a pair, and both must be edited together.
-  select lower(coalesce(auth.jwt() ->> 'email', '')) = 'bimmons927@gmail.com';
+  -- btrim and lower must match isAuthorizedEmail() exactly. If this comparison
+  -- were the stricter of the two, a request could pass the app gate and then
+  -- silently see no rows.
+  select btrim(lower(coalesce(auth.jwt() ->> 'email', ''))) = 'bimmons927@gmail.com';
 $$;
 
 comment on function public.is_authorized() is

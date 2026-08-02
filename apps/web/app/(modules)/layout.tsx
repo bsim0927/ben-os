@@ -1,17 +1,23 @@
-import type { User } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
 
 import { CrumbRow } from "@/components/crumb-row";
-import { ModuleSidebar, type Account } from "@/components/module-sidebar";
-import { isAuthorizedEmail } from "@/lib/auth";
+import { ModuleSidebar } from "@/components/module-sidebar";
+import { authorizedUserFor, isAuthorizedEmail, loginRedirectFor } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+
+/**
+ * Nothing syncs yet — the Financials module brings the first real source, and
+ * these are the two seams it will feed.
+ */
+const LAST_SYNCED = "No syncs yet";
+const SYNC_STATUS = "No sources connected";
 
 /**
  * The dashboard shell, and the inner half of the auth gate.
  *
- * The middleware already turned unauthorized requests away; this check runs
- * again anyway, because a routing mistake there should cost a redirect, not the
- * whole app's privacy. Every module route renders inside here.
+ * The proxy already turned unauthorized requests away; this check runs again
+ * anyway, because a routing mistake there should cost a redirect, not the whole
+ * app's privacy. Every module route renders inside here.
  */
 export default async function ShellLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -20,28 +26,16 @@ export default async function ShellLayout({ children }: { children: React.ReactN
   } = await supabase.auth.getUser();
 
   if (!user || !isAuthorizedEmail(user.email)) {
-    redirect(user ? "/login?error=unauthorized" : "/login");
+    redirect(loginRedirectFor(user));
   }
 
   return (
     <div className="flex min-h-full flex-1">
-      <ModuleSidebar account={accountFor(user)} />
+      <ModuleSidebar user={authorizedUserFor(user)} lastSynced={LAST_SYNCED} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <CrumbRow />
+        <CrumbRow syncStatus={SYNC_STATUS} />
         <main className="min-w-0 flex-1 px-9 pb-16">{children}</main>
       </div>
     </div>
   );
-}
-
-function accountFor(user: User): Account {
-  const metadata = user.user_metadata as { full_name?: string; name?: string } | undefined;
-  const name = metadata?.full_name?.trim() || metadata?.name?.trim() || user.email || "Account";
-
-  return {
-    name,
-    initial: name.charAt(0).toUpperCase(),
-    // Nothing syncs yet — the Financials module brings the first real source.
-    lastSynced: "No syncs yet",
-  };
 }

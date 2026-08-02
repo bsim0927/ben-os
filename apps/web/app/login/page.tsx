@@ -1,3 +1,4 @@
+import { consoleButtonClassName, Wordmark } from "@/components/console";
 import { GoogleSignInButton } from "@/components/google-sign-in-button";
 import { isAuthorizedEmail } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -28,9 +29,7 @@ export default async function LoginPage({
   return (
     <main className="flex flex-1 items-center justify-center p-8">
       <div className="border-hairline bg-panel w-full max-w-sm rounded-lg border p-6">
-        <p className="text-muted font-mono text-[13px] tracking-[0.08em]">
-          <b className="text-ink font-semibold">ben</b>/os
-        </p>
+        <Wordmark />
 
         <h1 className="text-muted mt-5 text-[11px] tracking-[0.08em] uppercase">Sign in</h1>
 
@@ -52,10 +51,7 @@ export default async function LoginPage({
             <p className="text-muted text-[11px] tracking-[0.06em] uppercase">Signed in as</p>
             <p className="text-ink mt-1 truncate text-[13px]">{wrongAccount}</p>
             <form action="/auth/signout" method="post" className="mt-4">
-              <button
-                type="submit"
-                className="border-hairline bg-panel-2 text-ink hover:border-accent w-full rounded-md border px-3 py-2 text-[13px]"
-              >
+              <button type="submit" className={consoleButtonClassName}>
                 Sign out
               </button>
             </form>

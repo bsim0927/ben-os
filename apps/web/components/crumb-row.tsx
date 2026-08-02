@@ -7,8 +7,11 @@ import { crumbFor } from "@/lib/modules";
 /**
  * `<Module> / <page>` plus a right-aligned freshness chip, sitting above every
  * module's content. Both halves are shell-owned: a module never renders here.
+ *
+ * `syncStatus` comes from the server layout so that surfacing a broken or
+ * expired connection later is a change there, not here.
  */
-export function CrumbRow() {
+export function CrumbRow({ syncStatus }: { syncStatus: string }) {
   const crumb = crumbFor(usePathname());
 
   return (
@@ -17,7 +20,7 @@ export function CrumbRow() {
         <b className="text-ink font-medium">{crumb.module}</b> / {crumb.page}
       </p>
       <span className="border-hairline text-muted rounded-full border px-2.5 py-[3px] text-[11.5px]">
-        No sources connected
+        {syncStatus}
       </span>
     </header>
   );

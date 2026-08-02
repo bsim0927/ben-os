@@ -1,11 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { isAuthorizedEmail } from "@/lib/auth";
+import { isAuthorizedEmail, LOGIN_PATH, loginRedirectFor } from "@/lib/auth";
 
 import { supabaseEnv } from "./env";
-
-const LOGIN_PATH = "/login";
 
 /** Routes that must stay reachable before we know who the visitor is. */
 const PUBLIC_PREFIXES = ["/auth"];
@@ -62,11 +60,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     return response;
   }
 
-  return redirectCarryingCookies(
-    request,
-    user ? `${LOGIN_PATH}?error=unauthorized` : LOGIN_PATH,
-    response,
-  );
+  return redirectCarryingCookies(request, loginRedirectFor(user), response);
 }
 
 /**

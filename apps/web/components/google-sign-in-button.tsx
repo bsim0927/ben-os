@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { consoleButtonClassName } from "@/components/console";
 import { createClient } from "@/lib/supabase/client";
 
 /**
@@ -32,12 +33,7 @@ export function GoogleSignInButton() {
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={signIn}
-        disabled={pending}
-        className="border-hairline bg-panel-2 text-ink hover:border-accent w-full rounded-md border px-3 py-2 text-[13px] disabled:opacity-50"
-      >
+      <button type="button" onClick={signIn} disabled={pending} className={consoleButtonClassName}>
         {pending ? "Redirecting…" : "Continue with Google"}
       </button>
       {failed ? (

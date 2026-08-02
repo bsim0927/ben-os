@@ -65,6 +65,10 @@ Steps that can't live in this repo, because they're dashboard settings:
 3. Set Site URL and add `<deployment>/auth/callback` to the redirect allow-list.
 4. Apply the migrations: `supabase db push`.
 5. Copy `apps/web/.env.example` to `apps/web/.env.local` and fill in the project URL and anon key.
+6. On any deployed environment, set `NEXT_PUBLIC_SITE_URL` to that deployment's public origin. The
+   sign-in callback builds its redirect from it — behind a proxy the request's own origin is the
+   internal one, and the `x-forwarded-host` header is not trusted for this because any caller can
+   set it.
 
 `supabase/config.toml` mirrors 1–3 for local development (`supabase start`), reading the Google
 credentials from a root `.env` — see `.env.example`.
