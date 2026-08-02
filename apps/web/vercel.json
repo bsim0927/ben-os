@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/cron/financials-sync",
-      "schedule": "37 * * * *"
+      "schedule": "37 11 * * *"
     }
   ]
 }
