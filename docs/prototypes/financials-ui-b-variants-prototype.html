@@ -1,0 +1,510 @@
+<title>Financials UI — Round 2: Banking vs Investing</title>
+<style>
+  /* Round 2, branched off Trend (variant B from the first pass). Real accounts
+     are just Chase (checking) and Fidelity (brokerage) — two fundamentally
+     different things (day-to-day spend vs. long-horizon investing) that
+     should read as separate but related, not one merged account list.
+     Three structural answers, switchable via ?variant=d|e|f:
+       D — Tabs: Overview / Banking / Investing, one at a time
+       E — Split screen: both visible side by side, shared net-worth strip on top
+       F — Stacked: both fully rendered in one scroll, joined by relation dividers
+     Same Console shell as round 1 (sidebar + crumb-row fixed, not a variant). */
+
+  :root { color-scheme: dark; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  button { font-family: inherit; }
+  :focus-visible { outline: 2px solid #38BDF8; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  body {
+    --bg: #0B0D10;
+    --panel: #14171B;
+    --panel-2: #191D22;
+    --panel-3: #1E232A;
+    --border: #232830;
+    --text: #E6E9ED;
+    --muted: #838C99;
+    --accent: #38BDF8;
+    --positive: #34D399;
+    --negative: #F87171;
+    --bank: #38BDF8;
+    --invest: #D4A94C;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "SF Pro Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ============================= Shell (fixed) ============================= */
+  .sidebar { width: 232px; flex: none; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 20px 12px; gap: 28px; }
+  .wordmark { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; letter-spacing: 0.08em; color: var(--muted); padding: 0 8px; }
+  .wordmark b { color: var(--text); }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; font-size: 13.5px; color: var(--muted); border-left: 2px solid transparent; text-decoration: none; }
+  .nav-item svg { width: 16px; height: 16px; flex: none; }
+  .nav-item.is-active { color: var(--text); background: var(--panel-2); border-left-color: var(--accent); }
+  .nav-item.is-soon { opacity: 0.45; cursor: default; }
+  .nav-soon-tag { margin-left: auto; font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 6px; }
+  .sidebar-spacer { flex: 1; }
+  .account-chip { display: flex; align-items: center; gap: 10px; padding: 10px; border-top: 1px solid var(--border); }
+  .avatar { width: 26px; height: 26px; border-radius: 6px; background: var(--accent); color: #04121A; display: grid; place-items: center; font-size: 12px; font-weight: 700; flex: none; }
+  .account-chip .who { font-size: 12px; }
+  .account-chip .sub { font-size: 11px; color: var(--muted); }
+
+  main { flex: 1; min-width: 0; padding: 28px 36px 100px; }
+  .crumb-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .crumb { font-size: 12.5px; color: var(--muted); }
+  .crumb b { color: var(--text); font-weight: 500; }
+  .sync-chip { font-size: 11.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+
+  .fv { display: none; }
+  .fv.active { display: block; }
+
+  /* ---- Shared hero/chart/card primitives ---- */
+  .hero-figure .label { font-size: 11px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 6px; display: flex; align-items: center; gap: 7px; }
+  .hero-figure .label .scope-dot { width: 7px; height: 7px; border-radius: 2px; }
+  .hero-figure .amount { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 32px; font-weight: 600; letter-spacing: -0.01em; }
+  .hero-figure .delta { margin-top: 5px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .hero-figure .delta.pos { color: var(--positive); }
+  .hero-figure .delta.neg { color: var(--negative); }
+
+  .range-toggle { display: flex; gap: 2px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px; height: fit-content; }
+  .range-toggle button { border: none; background: none; color: var(--muted); font-size: 11px; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
+  .range-toggle button.is-active { background: var(--panel-3); color: var(--text); }
+  .area-chart { width: 100%; height: auto; display: block; margin-top: 8px; }
+
+  .day-group { margin-bottom: 16px; }
+  .day-group .day-head { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 7px; }
+  .day-group .day-head .net { font-variant-numeric: tabular-nums; }
+  .tx-card { display: flex; align-items: center; gap: 11px; background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 10px 13px; margin-bottom: 6px; }
+  .tx-card .m-avatar { width: 26px; height: 26px; border-radius: 7px; background: var(--panel-3); display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; color: var(--muted); }
+  .tx-card .m-info { flex: 1; min-width: 0; }
+  .tx-card .m-name { font-size: 13px; }
+  .tx-card .m-tag { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .tx-card .amt { font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; font-size: 12.5px; flex: none; }
+  .tx-card .amt.pos { color: var(--positive); }
+
+  .cat-pill { font-size: 10.5px; border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px 2px 6px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; background: var(--panel-2); color: var(--text); position: relative; user-select: none; }
+  .cat-pill.is-static { cursor: default; }
+  .cat-pill .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .cat-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; background: var(--panel-3); border: 1px solid var(--border); border-radius: 8px; padding: 6px; min-width: 150px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); display: none; }
+  .cat-menu.open { display: block; }
+  .cat-menu input { width: 100%; background: var(--panel); border: 1px solid var(--border); border-radius: 5px; color: var(--text); font-size: 12px; padding: 5px 7px; margin-bottom: 5px; }
+  .cat-menu .opt { display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 5px 6px; border-radius: 5px; cursor: pointer; }
+  .cat-menu .opt:hover { background: var(--panel-2); }
+  .cat-menu .opt .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+
+  .relation-note { font-size: 11px; color: var(--muted); }
+  .relation-note b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* ============================= Variant D: Tabs ============================= */
+  .fv-d .tabbar { display: flex; gap: 4px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin-bottom: 22px; width: fit-content; }
+  .fv-d .tabbar button { border: none; background: none; color: var(--muted); font-size: 12.5px; padding: 7px 14px; border-radius: 7px; cursor: pointer; display: flex; align-items: center; gap: 7px; }
+  .fv-d .tabbar button .dot { width: 6px; height: 6px; border-radius: 2px; }
+  .fv-d .tabbar button.is-active { background: var(--panel-3); color: var(--text); }
+
+  .fv-d .d-pane { display: none; }
+  .fv-d .d-pane.active { display: block; }
+
+  .fv-d .overview-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 22px; }
+  .fv-d .ov-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; cursor: pointer; text-align: left; }
+  .fv-d .ov-card:hover { border-color: var(--border); background: var(--panel-2); }
+  .fv-d .ov-card .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .fv-d .ov-card .kind { font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .fv-d .ov-card .kind .dot { width: 6px; height: 6px; border-radius: 2px; }
+  .fv-d .ov-card .go { font-size: 12px; color: var(--muted); }
+  .fv-d .ov-card .name { font-size: 13.5px; margin-bottom: 4px; }
+  .fv-d .ov-card .amount { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 600; }
+  .fv-d .ov-card .delta { font-size: 11.5px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+  .fv-d .scope-hero { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6px; }
+  .fv-d .chart-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 20px; }
+
+  /* ============================= Variant E: Split screen ============================= */
+  .fv-e .combined-strip { display: flex; align-items: center; justify-content: space-between; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 20px; margin-bottom: 22px; }
+  .fv-e .combined-strip .cs-figure { display: flex; align-items: baseline; gap: 12px; }
+  .fv-e .combined-strip .cs-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .fv-e .combined-strip .cs-amount { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 600; }
+  .fv-e .combined-strip .cs-delta { color: var(--positive); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .fv-e .combined-strip .mini-chart { width: 140px; height: 32px; flex: none; }
+
+  .fv-e .split-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  .fv-e .col { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; border-top: 2px solid var(--col-accent); }
+  .fv-e .col-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  @media (max-width: 900px) { .fv-e .split-cols { grid-template-columns: 1fr; } }
+
+  /* ============================= Variant F: Stacked ============================= */
+  .fv-f .stack-hero { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+  .fv-f .stack-hero .cs-amount { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 26px; font-weight: 600; }
+  .fv-f .stack-hero .cs-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+  .fv-f .stack-hero .cs-delta { color: var(--positive); font-size: 12.5px; font-variant-numeric: tabular-nums; margin-top: 4px; }
+  .fv-f .stack-hero .mini-chart { width: 200px; height: 44px; }
+
+  .fv-f .divider { display: flex; align-items: center; gap: 12px; margin: 22px 0 18px; }
+  .fv-f .divider .line { flex: 1; height: 1px; background: var(--border); }
+  .fv-f .divider .relation-note { flex: none; }
+
+  .fv-f .section { border-left: 2px solid var(--sec-accent); padding-left: 18px; }
+  .fv-f .sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .fv-f .sec-head .kind { font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--sec-accent); }
+
+  @media (max-width: 900px) {
+    .fv-d .overview-cards { grid-template-columns: 1fr; }
+  }
+
+  /* ============================= Prototype switcher ============================= */
+  #switcher { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: #111318; color: #F2F3F5; border-radius: 999px; padding: 6px 6px 6px 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08); font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px; z-index: 1000; }
+  #switcher .swlabel { min-width: 210px; text-align: center; font-variant-numeric: tabular-nums; }
+  #switcher .swlabel b { font-weight: 600; }
+  #switcher .swlabel span { color: #9198A6; margin-left: 6px; }
+  #switcher button.arrow { width: 30px; height: 30px; border-radius: 50%; border: none; background: rgba(255,255,255,0.08); color: inherit; cursor: pointer; display: grid; place-items: center; font-size: 15px; }
+  #switcher button.arrow:hover { background: rgba(255,255,255,0.16); }
+</style>
+
+<!-- ============================= Shell (fixed) ============================= -->
+<aside class="sidebar">
+  <div class="wordmark"><b>ben</b>/os</div>
+  <nav>
+    <a class="nav-item is-active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17l5-6 4 4 8-10"/><path d="M14 5h6v6"/></svg>Financials</a>
+    <a class="nav-item is-soon" href="#" aria-disabled="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18v12H3z"/><path d="M3 7l9 6 9-6"/></svg>Email <span class="nav-soon-tag">Soon</span></a>
+    <a class="nav-item is-soon" href="#" aria-disabled="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 3v3M16 3v3"/></svg>Calendar <span class="nav-soon-tag">Soon</span></a>
+    <a class="nav-item is-soon" href="#" aria-disabled="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>Notes <span class="nav-soon-tag">Soon</span></a>
+  </nav>
+  <div class="sidebar-spacer"></div>
+  <div class="account-chip"><div class="avatar">B</div><div><div class="who">Ben</div><div class="sub">Synced 2h ago</div></div></div>
+</aside>
+
+<main>
+  <div class="crumb-row">
+    <div class="crumb"><b>Financials</b> / Net worth</div>
+    <div class="sync-chip">2 accounts · synced 2h ago</div>
+  </div>
+
+  <!-- ============================= Variant D: Tabs ============================= -->
+  <div class="fv fv-d" data-key="d" data-name="Tabs — Overview / Banking / Investing">
+    <div class="tabbar">
+      <button class="is-active" data-pane="overview">Overview</button>
+      <button data-pane="banking"><span class="dot" style="background:var(--bank);"></span>Banking</button>
+      <button data-pane="investing"><span class="dot" style="background:var(--invest);"></span>Investing</button>
+    </div>
+
+    <div class="d-pane active" data-pane="overview">
+      <div class="hero-figure">
+        <div class="label">Net worth</div>
+        <div class="amount">$84,480.83</div>
+        <div class="delta pos">+$1,850.00 (2.2%) this month</div>
+      </div>
+      <svg class="area-chart" viewBox="0 0 640 100" preserveAspectRatio="none">
+        <path d="M0 78 L64 72 L128 74 L192 58 L256 62 L320 44 L384 48 L448 26 L512 30 L576 14 L640 6" fill="none" stroke="#34D399" stroke-width="2"/>
+      </svg>
+      <div class="overview-cards">
+        <button class="ov-card" data-jump="banking">
+          <div class="top"><span class="kind"><span class="dot" style="background:var(--bank);"></span>Banking</span><span class="go">View →</span></div>
+          <div class="name">Chase Checking</div>
+          <div class="amount">$12,340.10</div>
+          <div class="delta pos">+$640.00 this month</div>
+        </button>
+        <button class="ov-card" data-jump="investing">
+          <div class="top"><span class="kind"><span class="dot" style="background:var(--invest);"></span>Investing</span><span class="go">View →</span></div>
+          <div class="name">Fidelity Brokerage</div>
+          <div class="amount">$72,140.73</div>
+          <div class="delta pos">+$1,210.00 this month</div>
+        </button>
+      </div>
+    </div>
+
+    <div class="d-pane" data-pane="banking">
+      <div class="chart-card">
+        <div class="scope-hero">
+          <div class="hero-figure">
+            <div class="label"><span class="scope-dot" style="background:var(--bank);"></span>Chase Checking</div>
+            <div class="amount">$12,340.10</div>
+            <div class="delta pos">+$640.00 (5.5%) this month</div>
+          </div>
+        </div>
+        <svg class="area-chart" viewBox="0 0 640 100" preserveAspectRatio="none">
+          <path d="M0 45 L64 65 L128 72 L192 30 L256 50 L320 60 L384 36 L448 68 L512 44 L576 20 L640 14" fill="none" stroke="var(--bank)" stroke-width="2"/>
+        </svg>
+      </div>
+      <div id="d-banking-body"></div>
+    </div>
+
+    <div class="d-pane" data-pane="investing">
+      <div class="chart-card">
+        <div class="scope-hero">
+          <div class="hero-figure">
+            <div class="label"><span class="scope-dot" style="background:var(--invest);"></span>Fidelity Brokerage</div>
+            <div class="amount">$72,140.73</div>
+            <div class="delta pos">+$1,210.00 (1.7%) this month</div>
+          </div>
+          <div class="range-toggle"><button>1M</button><button class="is-active">3M</button><button>1Y</button><button>ALL</button></div>
+        </div>
+        <svg class="area-chart" viewBox="0 0 640 100" preserveAspectRatio="none">
+          <path d="M0 85 L64 80 L128 77 L192 68 L256 64 L320 55 L384 50 L448 41 L512 35 L576 28 L640 20" fill="none" stroke="var(--invest)" stroke-width="2"/>
+        </svg>
+      </div>
+      <div id="d-investing-body"></div>
+    </div>
+  </div>
+
+  <!-- ============================= Variant E: Split screen ============================= -->
+  <div class="fv fv-e" data-key="e" data-name="Split — banking and investing side by side">
+    <div class="combined-strip">
+      <div class="cs-figure">
+        <div><div class="cs-label">Net worth</div><div class="cs-amount">$84,480.83</div></div>
+        <div class="cs-delta">+$1,850.00 (2.2%)</div>
+      </div>
+      <svg class="mini-chart" viewBox="0 0 140 32" preserveAspectRatio="none">
+        <path d="M0 25 L20 22 L40 23 L60 16 L80 18 L100 10 L120 12 L140 4" fill="none" stroke="#34D399" stroke-width="1.6"/>
+      </svg>
+    </div>
+    <div class="split-cols">
+      <div class="col" style="--col-accent: var(--bank);">
+        <div class="col-head">
+          <div class="hero-figure"><div class="label"><span class="scope-dot" style="background:var(--bank);"></span>Banking — Chase Checking</div><div class="amount" style="font-size:24px;">$12,340.10</div><div class="delta pos">+$640.00 (5.5%)</div></div>
+        </div>
+        <svg class="area-chart" viewBox="0 0 300 60" preserveAspectRatio="none">
+          <path d="M0 27 L30 39 L60 43 L90 18 L120 30 L150 36 L180 21 L210 41 L240 26 L270 12 L300 8" fill="none" stroke="var(--bank)" stroke-width="1.8"/>
+        </svg>
+        <div id="e-banking-body" style="margin-top: 14px;"></div>
+      </div>
+      <div class="col" style="--col-accent: var(--invest);">
+        <div class="col-head">
+          <div class="hero-figure"><div class="label"><span class="scope-dot" style="background:var(--invest);"></span>Investing — Fidelity Brokerage</div><div class="amount" style="font-size:24px;">$72,140.73</div><div class="delta pos">+$1,210.00 (1.7%)</div></div>
+        </div>
+        <svg class="area-chart" viewBox="0 0 300 60" preserveAspectRatio="none">
+          <path d="M0 51 L30 48 L60 46 L90 41 L120 38 L150 33 L180 30 L210 25 L240 21 L270 17 L300 12" fill="none" stroke="var(--invest)" stroke-width="1.8"/>
+        </svg>
+        <div id="e-investing-body" style="margin-top: 14px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================= Variant F: Stacked ============================= -->
+  <div class="fv fv-f" data-key="f" data-name="Stacked — one scroll, joined by relation dividers">
+    <div class="stack-hero">
+      <div><div class="cs-label">Net worth</div><div class="cs-amount">$84,480.83</div><div class="cs-delta">+$1,850.00 (2.2%) this month</div></div>
+      <svg class="mini-chart" viewBox="0 0 200 44" preserveAspectRatio="none">
+        <path d="M0 34 L28 31 L56 32 L84 22 L112 25 L140 14 L168 17 L200 5" fill="none" stroke="#34D399" stroke-width="1.8"/>
+      </svg>
+    </div>
+
+    <div class="divider">
+      <div class="line"></div>
+      <div class="relation-note">Chase is <b>14.6%</b> of net worth</div>
+      <div class="line"></div>
+    </div>
+
+    <div class="section" style="--sec-accent: var(--bank);">
+      <div class="sec-head">
+        <div class="hero-figure"><div class="label"><span class="kind">Banking</span></div><div class="amount">$12,340.10</div><div class="delta pos">+$640.00 (5.5%) this month</div></div>
+      </div>
+      <svg class="area-chart" viewBox="0 0 640 80" preserveAspectRatio="none">
+        <path d="M0 36 L64 52 L128 58 L192 24 L256 40 L320 48 L384 28 L448 55 L512 35 L576 16 L640 10" fill="none" stroke="var(--bank)" stroke-width="2"/>
+      </svg>
+      <div id="f-banking-body" style="margin-top: 14px;"></div>
+    </div>
+
+    <div class="divider">
+      <div class="line"></div>
+      <div class="relation-note">Fidelity is <b>85.4%</b> of net worth</div>
+      <div class="line"></div>
+    </div>
+
+    <div class="section" style="--sec-accent: var(--invest);">
+      <div class="sec-head">
+        <div class="hero-figure"><div class="label"><span class="kind">Investing</span></div><div class="amount">$72,140.73</div><div class="delta pos">+$1,210.00 (1.7%) this month</div></div>
+        <div class="range-toggle"><button>1M</button><button class="is-active">3M</button><button>1Y</button><button>ALL</button></div>
+      </div>
+      <svg class="area-chart" viewBox="0 0 640 80" preserveAspectRatio="none">
+        <path d="M0 68 L64 64 L128 62 L192 55 L256 51 L320 44 L384 40 L448 33 L512 28 L576 22 L640 16" fill="none" stroke="var(--invest)" stroke-width="2"/>
+      </svg>
+      <div id="f-investing-body" style="margin-top: 14px;"></div>
+    </div>
+  </div>
+</main>
+
+<!-- ============================= Switcher ============================= -->
+<div id="switcher">
+  <button class="arrow" id="sw-prev" aria-label="Previous variant">&#8249;</button>
+  <div class="swlabel" id="sw-label"></div>
+  <button class="arrow" id="sw-next" aria-label="Next variant">&#8250;</button>
+</div>
+
+<script>
+  (function () {
+    var BANK_CATS = [
+      { name: "Groceries", color: "#A78BFA" },
+      { name: "Dining", color: "#FBBF24" },
+      { name: "Subscription", color: "#60A5FA" },
+      { name: "Income", color: "#34D399" },
+      { name: "Utilities", color: "#F472B6" },
+      { name: "Shopping", color: "#22D3EE" }
+    ];
+    function bankCat(n) { return BANK_CATS.filter(function (c) { return c.name === n; })[0] || BANK_CATS[0]; }
+
+    var INVEST_TAGS = {
+      "Dividend": "#34D399",
+      "Contribution": "#60A5FA",
+      "Fee": "#F87171"
+    };
+
+    var CHASE_TX = [
+      { date: "Aug 1", merchant: "Whole Foods Market", cat: "Groceries", amount: -86.42 },
+      { date: "Aug 1", merchant: "Blue Bottle Coffee", cat: "Dining", amount: -6.75 },
+      { date: "Jul 31", merchant: "Spotify", cat: "Subscription", amount: -11.99 },
+      { date: "Jul 31", merchant: "Acme Corp Payroll", cat: "Income", amount: 3120.00 },
+      { date: "Jul 28", merchant: "Con Edison", cat: "Utilities", amount: -142.18 },
+      { date: "Jul 28", merchant: "Amazon", cat: "Shopping", amount: -64.30 }
+    ];
+
+    var FIDELITY_TX = [
+      { date: "Aug 1", merchant: "Dividend — VTI", tag: "Dividend", amount: 142.30 },
+      { date: "Jul 31", merchant: "Contribution", tag: "Contribution", amount: 1000.00 },
+      { date: "Jul 20", merchant: "Advisory fee", tag: "Fee", amount: -18.50 },
+      { date: "Jul 15", merchant: "Dividend — VXUS", tag: "Dividend", amount: 36.10 },
+      { date: "Jul 5", merchant: "Contribution", tag: "Contribution", amount: 500.00 }
+    ];
+
+    function fmt(amount) {
+      var abs = Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return (amount < 0 ? "−$" : "+$") + abs;
+    }
+
+    function catMenuHTML(rowId) {
+      var opts = BANK_CATS.map(function (c) {
+        return '<div class="opt" data-row="' + rowId + '" data-cat="' + c.name + '"><span class="dot" style="background:' + c.color + '"></span>' + c.name + '</div>';
+      }).join("");
+      return '<div class="cat-menu" id="menu-' + rowId + '"><input type="text" placeholder="Search categories…" /><div class="opts">' + opts + '</div></div>';
+    }
+
+    function bankPill(rowId, catName) {
+      var c = bankCat(catName);
+      return '<span class="cat-pill" data-row="' + rowId + '"><span class="dot" style="background:' + c.color + '"></span><span class="pill-label">' + catName + '</span>' + catMenuHTML(rowId) + '</span>';
+    }
+
+    function investPill(tag) {
+      return '<span class="cat-pill is-static"><span class="dot" style="background:' + INVEST_TAGS[tag] + '"></span>' + tag + '</span>';
+    }
+
+    function buildBankBody(prefix) {
+      var byDay = {}; var order = [];
+      CHASE_TX.forEach(function (t) { if (!byDay[t.date]) { byDay[t.date] = []; order.push(t.date); } byDay[t.date].push(t); });
+      var html = ""; var rowId = 0;
+      order.forEach(function (day) {
+        var net = byDay[day].reduce(function (s, t) { return s + t.amount; }, 0);
+        html += '<div class="day-group"><div class="day-head"><span>' + day + '</span><span class="net">' + fmt(net) + '</span></div>';
+        byDay[day].forEach(function (t) {
+          var id = prefix + "bk" + (rowId++);
+          var initials = t.merchant.split(" ").map(function (w) { return w[0]; }).slice(0, 2).join("");
+          html += '<div class="tx-card"><div class="m-avatar">' + initials + '</div><div class="m-info"><div class="m-name">' + t.merchant + '</div><div class="m-tag">' + bankPill(id, t.cat) + '</div></div><div class="amt' + (t.amount > 0 ? ' pos' : '') + '">' + fmt(t.amount) + '</div></div>';
+        });
+        html += '</div>';
+      });
+      return html;
+    }
+
+    function buildInvestBody() {
+      var byDay = {}; var order = [];
+      FIDELITY_TX.forEach(function (t) { if (!byDay[t.date]) { byDay[t.date] = []; order.push(t.date); } byDay[t.date].push(t); });
+      var html = "";
+      order.forEach(function (day) {
+        var net = byDay[day].reduce(function (s, t) { return s + t.amount; }, 0);
+        html += '<div class="day-group"><div class="day-head"><span>' + day + '</span><span class="net">' + fmt(net) + '</span></div>';
+        byDay[day].forEach(function (t) {
+          var initials = t.merchant.split(" ").map(function (w) { return w[0]; }).slice(0, 2).join("");
+          html += '<div class="tx-card"><div class="m-avatar">' + initials + '</div><div class="m-info"><div class="m-name">' + t.merchant + '</div><div class="m-tag">' + investPill(t.tag) + '</div></div><div class="amt' + (t.amount > 0 ? ' pos' : '') + '">' + fmt(t.amount) + '</div></div>';
+        });
+        html += '</div>';
+      });
+      return html;
+    }
+
+    ["d-banking-body", "e-banking-body", "f-banking-body"].forEach(function (id, i) {
+      document.getElementById(id).innerHTML = buildBankBody(id + "-");
+    });
+    ["d-investing-body", "e-investing-body", "f-investing-body"].forEach(function (id) {
+      document.getElementById(id).innerHTML = buildInvestBody();
+    });
+
+    document.addEventListener("click", function (e) {
+      var pill = e.target.closest ? e.target.closest(".cat-pill:not(.is-static)") : null;
+      var opt = e.target.closest ? e.target.closest(".opt") : null;
+      document.querySelectorAll(".cat-menu.open").forEach(function (m) {
+        if (!opt || m.id !== "menu-" + opt.dataset.row) m.classList.remove("open");
+      });
+      if (opt) {
+        var c = bankCat(opt.dataset.cat);
+        var pillEl = document.querySelector('.cat-pill[data-row="' + opt.dataset.row + '"]');
+        if (pillEl) {
+          pillEl.querySelector(".dot").style.background = c.color;
+          pillEl.querySelector(".pill-label").textContent = c.name;
+          pillEl.querySelector(".cat-menu").classList.remove("open");
+        }
+        e.stopPropagation();
+        return;
+      }
+      if (pill) {
+        pill.querySelector(".cat-menu").classList.toggle("open");
+        e.stopPropagation();
+      }
+    });
+
+    // ---- Variant D: internal tab state ----
+    var dTabs = document.querySelectorAll(".fv-d .tabbar button");
+    function setDPane(pane) {
+      dTabs.forEach(function (b) { b.classList.toggle("is-active", b.dataset.pane === pane); });
+      document.querySelectorAll(".fv-d .d-pane").forEach(function (p) { p.classList.toggle("active", p.dataset.pane === pane); });
+    }
+    dTabs.forEach(function (b) { b.addEventListener("click", function () { setDPane(b.dataset.pane); }); });
+    document.querySelectorAll(".fv-d .ov-card").forEach(function (c) {
+      c.addEventListener("click", function () { setDPane(c.dataset.jump); });
+    });
+
+    // ============================= Top-level switcher =============================
+    var variants = [
+      { key: "d", name: "Tabs" },
+      { key: "e", name: "Split" },
+      { key: "f", name: "Stacked" }
+    ];
+
+    function currentKey() {
+      var params = new URLSearchParams(window.location.search);
+      var v = params.get("variant");
+      return variants.some(function (x) { return x.key === v; }) ? v : "d";
+    }
+
+    function render(key) {
+      document.querySelectorAll(".fv").forEach(function (el) { el.classList.toggle("active", el.dataset.key === key); });
+      var meta = variants.filter(function (x) { return x.key === key; })[0];
+      document.getElementById("sw-label").innerHTML = "<b>" + meta.key.toUpperCase() + "</b><span>" + meta.name + "</span>";
+    }
+
+    function setKey(key) {
+      var params = new URLSearchParams(window.location.search);
+      params.set("variant", key);
+      history.replaceState(null, "", "?" + params.toString());
+      render(key);
+    }
+
+    function cycle(delta) {
+      var idx = variants.findIndex(function (x) { return x.key === currentKey(); });
+      var next = variants[(idx + delta + variants.length) % variants.length];
+      setKey(next.key);
+    }
+
+    document.getElementById("sw-prev").addEventListener("click", function () { cycle(-1); });
+    document.getElementById("sw-next").addEventListener("click", function () { cycle(1); });
+    document.addEventListener("keydown", function (e) {
+      var tag = (document.activeElement && document.activeElement.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || (document.activeElement && document.activeElement.isContentEditable)) return;
+      if (e.key === "ArrowLeft") cycle(-1);
+      if (e.key === "ArrowRight") cycle(1);
+    });
+
+    render(currentKey());
+  })();
+</script>
