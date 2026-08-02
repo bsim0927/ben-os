@@ -176,7 +176,8 @@ Source: [SimpleFIN Bridge Developer Guide](https://beta-bridge.simplefin.org/inf
   - This is a flat account-level subscription (not metered per API call). Bridge's pricing page
     also states plan limits of **up to 25 institutions and 25 connected apps** per Bridge
     account.
-    Source: [beta-bridge.simplefin.org](https://beta-bridge.simplefin.org/).
+
+Source: [beta-bridge.simplefin.org](https://beta-bridge.simplefin.org/).
 
 ### 6. What an existing SimpleFIN setup already grants access to
 

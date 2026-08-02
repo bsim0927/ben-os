@@ -23,6 +23,6 @@
   },
   "lint-staged": {
     "*.{js,jsx,mjs,cjs,ts,tsx,json,css,md,yml,yaml}": "prettier --write",
-    "apps/web/**/*.{js,jsx,mjs,ts,tsx}": "pnpm --filter @ben-os/web exec eslint --fix --no-warn-ignored"
+    "apps/web/**/*.{js,jsx,mjs,ts,tsx}": "pnpm --filter @ben-os/web exec eslint --fix --max-warnings 0 --no-warn-ignored"
   }
 }

@@ -1,8 +1,11 @@
 name: CI
 
+# Push only. Check runs attach to the commit SHA, so a PR still shows this
+# workflow's result — adding a `pull_request` trigger would just run everything
+# twice, since the two events produce different `github.ref` values and so land
+# in different concurrency groups.
 on:
   push:
-  pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}
