@@ -40,3 +40,9 @@ commit;
 `set local` scopes the opt-in to that one transaction. Never set it session-wide, and never disable
 or drop the triggers to get a statement through — the guard is cheap to satisfy honestly and its
 whole value is that bypassing it has to be a decision someone made on purpose.
+
+A `PreToolUse` hook (`.claude/hooks/guard-supabase-sql.py`, registered in `.claude/settings.json`)
+catches the same statements one layer earlier, before they reach the database — including the ones
+that would disable the database guards. It reads the same `ben_os.allow_bulk_delete` opt-in, so
+there is one convention rather than two. If it blocks something, **that is not a puzzle to solve by
+rephrasing the SQL**: stop and ask.
