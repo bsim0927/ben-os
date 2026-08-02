@@ -1,0 +1,474 @@
+<title>Fidelity Holdings — 3 Variants</title>
+<style>
+  /* Three variants of the real Fidelity holdings/allocation view, switchable
+     via ?variant=a|b|c, hosted inside the already-locked Console shell
+     (sidebar + crumb-row, from ticket #5 — not a variant here, held fixed).
+     Answers ticket #18: replaces the dimmed "Requires holdings sync" preview
+     from ticket #6/round5 now that the financials_holding/financials_security
+     schema is locked (ADR 0004, ticket #16) — real quantity/average_cost_basis/
+     market_price/currency, snapshotted per sync via as_of. Treated as its own
+     drill-down page off the Financials overview (not squeezed into the small
+     Fidelity panel) since it now carries real gain/loss and allocation detail.
+     Assumption: apps/web still doesn't exist (repo tooling unscaffolded), so —
+     same as prior rounds — this is a self-contained static file, not a real
+     Next.js route. */
+
+  :root { color-scheme: dark; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  button { font-family: inherit; }
+  :focus-visible { outline: 2px solid #38BDF8; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  body {
+    --bg: #0B0D10;
+    --panel: #14171B;
+    --panel-2: #191D22;
+    --panel-3: #1E232A;
+    --border: #232830;
+    --text: #E6E9ED;
+    --muted: #838C99;
+    --accent: #38BDF8;
+    --positive: #34D399;
+    --negative: #F87171;
+    --bank: #7DD3E8;
+    --invest: #D4A94C;
+    --t-etf: #D4A94C;
+    --t-equity: #7DD3E8;
+    --t-cash: #5EEAD4;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "SF Pro Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ============================= Shell (fixed — Console, locked in #5) ============================= */
+  .sidebar { width: 232px; flex: none; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 20px 12px; gap: 28px; }
+  .wordmark { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; letter-spacing: 0.08em; color: var(--muted); padding: 0 8px; }
+  .wordmark b { color: var(--text); }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; font-size: 13.5px; color: var(--muted); border-left: 2px solid transparent; text-decoration: none; }
+  .nav-item svg { width: 16px; height: 16px; flex: none; }
+  .nav-item.is-active { color: var(--text); background: var(--panel-2); border-left-color: var(--accent); }
+  .nav-item.is-soon { opacity: 0.45; cursor: default; }
+  .nav-soon-tag { margin-left: auto; font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 6px; }
+  .sidebar-spacer { flex: 1; }
+  .account-chip { display: flex; align-items: center; gap: 10px; padding: 10px; border-top: 1px solid var(--border); }
+  .avatar { width: 26px; height: 26px; border-radius: 6px; background: var(--accent); color: #04121A; display: grid; place-items: center; font-size: 12px; font-weight: 700; flex: none; }
+  .account-chip .who { font-size: 12px; }
+  .account-chip .sub { font-size: 11px; color: var(--muted); }
+
+  main { flex: 1; min-width: 0; padding: 28px 36px 100px; max-width: 980px; }
+  .crumb-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .crumb { font-size: 12.5px; color: var(--muted); }
+  .crumb b { color: var(--text); font-weight: 500; }
+  .back-link { color: var(--muted); text-decoration: none; }
+  .back-link:hover { color: var(--text); }
+  .sync-chip { font-size: 11.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+
+  /* ============================= Shared summary strip (fixed across variants) ============================= */
+  .hs-summary { display: flex; align-items: center; gap: 28px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; margin-bottom: 22px; }
+  .hs-stat .k { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 5px; }
+  .hs-stat .v { font-size: 20px; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; font-weight: 600; }
+  .hs-stat .v.pos { color: var(--positive); }
+  .hs-stat .v.neg { color: var(--negative); }
+  .hs-stat .sub { font-size: 11px; color: var(--muted); margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .hs-divider { width: 1px; align-self: stretch; background: var(--border); }
+  .hs-asof { margin-left: auto; font-size: 11px; color: var(--muted); text-align: right; }
+
+  .type-tag { font-size: 9.5px; letter-spacing: 0.04em; text-transform: uppercase; border-radius: 4px; padding: 2px 6px; font-weight: 600; }
+  .type-tag.etf { color: var(--t-etf); background: rgba(212,169,76,0.14); }
+  .type-tag.equity { color: var(--t-equity); background: rgba(125,211,232,0.14); }
+  .type-tag.cash { color: var(--t-cash); background: rgba(94,234,212,0.14); }
+
+  /* ============================= Variant containers ============================= */
+  .hv { display: none; }
+  .hv.active { display: block; }
+
+  /* ---- Variant A: Positions ledger ---- */
+  .hv-a .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .hv-a table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .hv-a th { text-align: right; font-weight: 500; color: var(--muted); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; padding: 12px 14px; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; white-space: nowrap; }
+  .hv-a th:first-child, .hv-a td:first-child { text-align: left; }
+  .hv-a th .arrow { opacity: 0; margin-left: 3px; font-size: 9px; }
+  .hv-a th.sorted .arrow { opacity: 1; }
+  .hv-a th:hover { color: var(--text); }
+  .hv-a td { padding: 12px 14px; border-bottom: 1px solid var(--border); text-align: right; vertical-align: middle; }
+  .hv-a tr:last-child td { border-bottom: none; }
+  .hv-a td.r { font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; }
+  .hv-a .sym-cell { display: flex; align-items: center; gap: 9px; }
+  .hv-a .sym { font-family: ui-monospace, monospace; font-weight: 600; font-size: 13px; }
+  .hv-a .nm { color: var(--muted); font-size: 11px; margin-top: 1px; }
+  .hv-a .gl.pos { color: var(--positive); }
+  .hv-a .gl.neg { color: var(--negative); }
+  .hv-a .pct-of { color: var(--muted); font-size: 11px; }
+
+  /* ---- Variant B: Allocation-led ---- */
+  .hv-b .alloc-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 22px 24px; margin-bottom: 18px; display: flex; align-items: center; gap: 32px; }
+  .hv-b .donut-wrap { position: relative; width: 150px; height: 150px; flex: none; }
+  .hv-b .donut-wrap svg { width: 100%; height: 100%; }
+  .hv-b .donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .hv-b .donut-center .amt { font-size: 15px; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .hv-b .donut-center .lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 3px; }
+  .hv-b .legend { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+  .hv-b .legend-row { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+  .hv-b .legend-row .dot { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .hv-b .legend-row .lname { flex: 1; }
+  .hv-b .legend-row .lval { font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; margin-right: 10px; }
+  .hv-b .legend-row .lpct { color: var(--muted); width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+  .hv-b .alloc-note { font-size: 11px; color: var(--muted); max-width: 62ch; margin: -6px 0 18px; padding: 0 2px; }
+  .hv-b .group { margin-bottom: 16px; }
+  .hv-b .group-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 0 2px; }
+  .hv-b .group-head .dot { width: 8px; height: 8px; border-radius: 2px; }
+  .hv-b .group-head .gname { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .hv-b .group-head .gtotal { margin-left: auto; font-size: 12px; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; }
+  .hv-b .grow { display: grid; grid-template-columns: 1fr 120px 70px 90px; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--border); padding: 10px 14px; font-size: 12.5px; }
+  .hv-b .grow + .grow { border-top: none; }
+  .hv-b .group .grow:first-of-type { border-radius: 10px 10px 0 0; }
+  .hv-b .group .grow:last-of-type { border-radius: 0 0 10px 10px; }
+  .hv-b .grow .sym { font-family: ui-monospace, monospace; font-weight: 600; }
+  .hv-b .grow .nm { color: var(--muted); font-size: 10.5px; }
+  .hv-b .wbar-track { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+  .hv-b .wbar-fill { height: 100%; border-radius: 3px; }
+  .hv-b .grow .val { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; }
+  .hv-b .grow .gl { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; }
+  .hv-b .grow .gl.pos { color: var(--positive); }
+  .hv-b .grow .gl.neg { color: var(--negative); }
+
+  /* ---- Variant C: Master-detail with lots ---- */
+  .hv-c .md-wrap { display: grid; grid-template-columns: 260px 1fr; gap: 18px; align-items: flex-start; }
+  .hv-c .md-list { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .hv-c .md-row { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .hv-c .md-row:last-child { border-bottom: none; }
+  .hv-c .md-row:hover { background: var(--panel-2); }
+  .hv-c .md-row.is-active { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+  .hv-c .md-row .sym { font-family: ui-monospace, monospace; font-weight: 600; font-size: 12.5px; }
+  .hv-c .md-row .nm { color: var(--muted); font-size: 10.5px; margin-top: 1px; }
+  .hv-c .md-row .right { margin-left: auto; text-align: right; }
+  .hv-c .md-row .val { font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; font-size: 12px; }
+  .hv-c .md-row .gl { font-size: 10.5px; font-variant-numeric: tabular-nums; margin-top: 1px; }
+  .hv-c .md-row .gl.pos { color: var(--positive); }
+  .hv-c .md-row .gl.neg { color: var(--negative); }
+  .hv-c .md-detail { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 22px 24px; }
+  .hv-c .md-detail-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
+  .hv-c .md-detail-head .sym { font-size: 20px; font-family: ui-monospace, monospace; font-weight: 700; }
+  .hv-c .md-detail-head .nm { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+  .hv-c .stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 22px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .hv-c .stat-grid .k { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 5px; }
+  .hv-c .stat-grid .v { font-size: 14px; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; font-weight: 600; }
+  .hv-c .stat-grid .v.pos { color: var(--positive); }
+  .hv-c .stat-grid .v.neg { color: var(--negative); }
+  .hv-c .lots-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .hv-c .lots-head .lt { font-size: 13px; }
+  .hv-c .lots-head .lc { font-size: 11px; color: var(--muted); }
+  .hv-c table.lots { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .hv-c table.lots th { text-align: right; font-weight: 500; color: var(--muted); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; padding: 0 10px 8px; border-bottom: 1px solid var(--border); }
+  .hv-c table.lots th:first-child, .hv-c table.lots td:first-child { text-align: left; }
+  .hv-c table.lots td { padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; }
+  .hv-c table.lots tr:last-child td { border-bottom: none; }
+  .hv-c .lots-empty { padding: 20px 4px; color: var(--muted); font-size: 12.5px; text-align: center; border: 1px dashed var(--border); border-radius: 8px; }
+
+  /* ============================= Prototype switcher ============================= */
+  #switcher {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 4px;
+    background: #111318; color: #F2F3F5;
+    border-radius: 999px; padding: 6px 6px 6px 14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 13px; z-index: 1000;
+  }
+  #switcher .swlabel { min-width: 220px; text-align: center; font-variant-numeric: tabular-nums; }
+  #switcher .swlabel b { font-weight: 600; }
+  #switcher .swlabel span { color: #9198A6; margin-left: 6px; }
+  #switcher button.arrow { width: 30px; height: 30px; border-radius: 50%; border: none; background: rgba(255,255,255,0.08); color: inherit; cursor: pointer; display: grid; place-items: center; font-size: 15px; }
+  #switcher button.arrow:hover { background: rgba(255,255,255,0.16); }
+</style>
+
+<!-- ============================= Shell (fixed) ============================= -->
+<aside class="sidebar">
+  <div class="wordmark"><b>ben</b>/os</div>
+  <nav>
+    <a class="nav-item is-active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17l5-6 4 4 8-10"/><path d="M14 5h6v6"/></svg>Financials</a>
+    <a class="nav-item is-soon" href="#" aria-disabled="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18v12H3z"/><path d="M3 7l9 6 9-6"/></svg>Email <span class="nav-soon-tag">Soon</span></a>
+    <a class="nav-item is-soon" href="#" aria-disabled="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 3v3M16 3v3"/></svg>Calendar <span class="nav-soon-tag">Soon</span></a>
+    <a class="nav-item is-soon" href="#" aria-disabled="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>Notes <span class="nav-soon-tag">Soon</span></a>
+  </nav>
+  <div class="sidebar-spacer"></div>
+  <div class="account-chip"><div class="avatar">B</div><div><div class="who">Ben</div><div class="sub">Synced 2h ago</div></div></div>
+</aside>
+
+<main>
+  <div class="crumb-row">
+    <div class="crumb"><a class="back-link" href="#">‹ Financials</a> / <b>Fidelity</b> / Holdings</div>
+    <div class="sync-chip" id="sync-chip"></div>
+  </div>
+
+  <div class="hs-summary" id="hs-summary"></div>
+
+  <!-- ============================= Variant A: Positions ledger ============================= -->
+  <div class="hv hv-a" data-key="a">
+    <div class="panel">
+      <table>
+        <thead>
+          <tr>
+            <th data-sort="symbol">Position <span class="arrow">▾</span></th>
+            <th data-sort="qty">Quantity <span class="arrow">▾</span></th>
+            <th data-sort="avgCost">Avg Cost <span class="arrow">▾</span></th>
+            <th data-sort="price">Market Price <span class="arrow">▾</span></th>
+            <th data-sort="value">Market Value <span class="arrow">▾</span></th>
+            <th data-sort="gain">Gain / Loss <span class="arrow">▾</span></th>
+            <th data-sort="pctOfAcct">% of Account <span class="arrow">▾</span></th>
+          </tr>
+        </thead>
+        <tbody id="ledger-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============================= Variant B: Allocation-led ============================= -->
+  <div class="hv hv-b" data-key="b">
+    <div class="alloc-panel">
+      <div class="donut-wrap">
+        <svg viewBox="0 0 120 120" id="donut"></svg>
+        <div class="donut-center"><div class="amt" id="donut-total"></div><div class="lbl">Total value</div></div>
+      </div>
+      <div class="legend" id="alloc-legend"></div>
+    </div>
+    <div class="alloc-note">Grouped by <code>financials_security.security_type</code> — the only classification the schema stores today. VTI/VXUS/BND are all tagged <code>etf</code> even though BND is bond exposure; a true stock/bond asset-class split would mean looking inside each fund's own holdings, which isn't something this ticket's data gives us — out of scope here.</div>
+    <div id="alloc-groups"></div>
+  </div>
+
+  <!-- ============================= Variant C: Master-detail with lots ============================= -->
+  <div class="hv hv-c" data-key="c">
+    <div class="md-wrap">
+      <div class="md-list" id="md-list"></div>
+      <div class="md-detail" id="md-detail"></div>
+    </div>
+  </div>
+</main>
+
+<!-- ============================= Switcher ============================= -->
+<div id="switcher">
+  <button class="arrow" id="sw-prev" aria-label="Previous variant">&#8249;</button>
+  <div class="swlabel" id="sw-label"></div>
+  <button class="arrow" id="sw-next" aria-label="Next variant">&#8250;</button>
+</div>
+
+<script>
+  (function () {
+    var TYPE_LABEL = { etf: "ETF", equity: "Equity", fixed_income: "Fixed Income", mutual_fund: "Mutual Fund", cash: "Cash", crypto: "Crypto", option: "Option", other: "Other" };
+    var TYPE_COLOR = { etf: "#D4A94C", equity: "#7DD3E8", cash: "#5EEAD4", fixed_income: "#F472B6", mutual_fund: "#A78BFA", crypto: "#FB923C", option: "#60A5FA", other: "#9198A6" };
+
+    // Mirrors financials_holding (latest as_of per account/security) joined to financials_security.
+    var RAW = [
+      { symbol: "VTI", name: "Vanguard Total Stock Market ETF", type: "etf", qty: 152.4, avgCost: 258.80, price: 276.90, currency: "USD",
+        lots: [{ date: "2022-03-15", qty: 60, cost: 215.10 }, { date: "2023-06-02", qty: 50, cost: 265.40 }, { date: "2024-11-20", qty: 42.4, cost: 312.85 }] },
+      { symbol: "VXUS", name: "Vanguard Total International Stock ETF", type: "etf", qty: 285.7, avgCost: 62.14, price: 64.20, currency: "USD",
+        lots: [{ date: "2022-08-10", qty: 150, cost: 58.20 }, { date: "2023-09-05", qty: 135.7, cost: 66.50 }] },
+      { symbol: "BND", name: "Vanguard Total Bond Market ETF", type: "etf", qty: 168.9, avgCost: 72.78, price: 71.40, currency: "USD",
+        lots: [{ date: "2021-12-01", qty: 100, cost: 78.90 }, { date: "2023-04-18", qty: 68.9, cost: 63.90 }] },
+      { symbol: "AAPL", name: "Apple Inc.", type: "equity", qty: 12, avgCost: 145.20, price: 195.89, currency: "USD",
+        lots: [{ date: "2020-01-15", qty: 12, cost: 145.20 }] },
+      { symbol: "CASH", name: "Money market sweep", type: "cash", qty: 3184.99, avgCost: 1.00, price: 1.00, currency: "USD", lots: null }
+    ];
+
+    // Totals derived at read time (quantity * price), not persisted — matches ADR 0004.
+    var totalValue = 0, totalCost = 0;
+    var HOLDINGS = RAW.map(function (h) {
+      var value = h.qty * h.price;
+      var cost = h.qty * h.avgCost;
+      totalValue += value;
+      totalCost += cost;
+      return Object.assign({}, h, { value: value, cost: cost });
+    });
+    var totalGain = totalValue - totalCost;
+    HOLDINGS = HOLDINGS.map(function (h) {
+      var gain = h.value - h.cost;
+      return Object.assign({}, h, { gain: gain, gainPct: (gain / h.cost) * 100, pctOfAcct: (h.value / totalValue) * 100 });
+    });
+
+    function fmt(n) {
+      var abs = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return (n < 0 ? "−$" : "$") + abs;
+    }
+    function pct(n) { return (n >= 0 ? "+" : "") + n.toFixed(2) + "%"; }
+    function glClass(n) { return n > 0 ? "pos" : (n < 0 ? "neg" : ""); }
+
+    document.getElementById("sync-chip").textContent = HOLDINGS.length + " positions · synced 2h ago";
+
+    // ============================= Shared summary strip =============================
+    document.getElementById("hs-summary").innerHTML =
+      '<div class="hs-stat"><div class="k">Total value</div><div class="v">' + fmt(totalValue) + '</div></div>' +
+      '<div class="hs-divider"></div>' +
+      '<div class="hs-stat"><div class="k">Total cost basis</div><div class="v">' + fmt(totalCost) + '</div></div>' +
+      '<div class="hs-divider"></div>' +
+      '<div class="hs-stat"><div class="k">Unrealized gain/loss</div><div class="v ' + glClass(totalGain) + '">' + fmt(totalGain) + '</div><div class="sub">' + pct((totalGain / totalCost) * 100) + '</div></div>' +
+      '<div class="hs-asof">as of<br>Aug 1, 4:12 PM</div>';
+
+    // ============================= Variant A: ledger =============================
+    var sortState = { key: "value", dir: -1 };
+    function renderLedger() {
+      var rows = HOLDINGS.slice().sort(function (a, b) {
+        var av = sortState.key === "symbol" ? a.symbol : a[sortState.key];
+        var bv = sortState.key === "symbol" ? b.symbol : b[sortState.key];
+        if (av < bv) return -1 * sortState.dir;
+        if (av > bv) return 1 * sortState.dir;
+        return 0;
+      });
+      document.getElementById("ledger-body").innerHTML = rows.map(function (h) {
+        return '<tr><td><div class="sym-cell"><div><div class="sym">' + h.symbol + '</div><div class="nm">' + h.name + '</div></div><span class="type-tag ' + h.type + '">' + TYPE_LABEL[h.type] + '</span></div></td>' +
+          '<td class="r">' + h.qty.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '</td>' +
+          '<td class="r">' + fmt(h.avgCost) + '</td>' +
+          '<td class="r">' + fmt(h.price) + '</td>' +
+          '<td class="r">' + fmt(h.value) + '</td>' +
+          '<td class="r"><span class="gl ' + glClass(h.gain) + '">' + fmt(h.gain) + '<br><span class="pct-of">' + pct(h.gainPct) + '</span></span></td>' +
+          '<td class="r pct-of">' + h.pctOfAcct.toFixed(1) + '%</td></tr>';
+      }).join("");
+      document.querySelectorAll(".hv-a th").forEach(function (th) {
+        var isSorted = th.dataset.sort === sortState.key;
+        th.classList.toggle("sorted", isSorted);
+        th.querySelector(".arrow").textContent = sortState.dir === 1 ? "▴" : "▾";
+      });
+    }
+    document.querySelectorAll(".hv-a th").forEach(function (th) {
+      th.addEventListener("click", function () {
+        var key = th.dataset.sort;
+        sortState.dir = sortState.key === key ? -sortState.dir : -1;
+        sortState.key = key;
+        renderLedger();
+      });
+    });
+    renderLedger();
+
+    // ============================= Variant B: allocation =============================
+    var groupsMap = {};
+    HOLDINGS.forEach(function (h) {
+      if (!groupsMap[h.type]) groupsMap[h.type] = { type: h.type, value: 0, cost: 0, items: [] };
+      groupsMap[h.type].value += h.value;
+      groupsMap[h.type].cost += h.cost;
+      groupsMap[h.type].items.push(h);
+    });
+    var groups = Object.keys(groupsMap).map(function (k) { return groupsMap[k]; }).sort(function (a, b) { return b.value - a.value; });
+
+    document.getElementById("donut-total").textContent = fmt(totalValue);
+    var r = 50, c = 60, circ = 2 * Math.PI * r, cum = 0;
+    document.getElementById("donut").innerHTML = groups.map(function (g) {
+      var frac = g.value / totalValue;
+      var len = frac * circ;
+      var seg = '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="' + TYPE_COLOR[g.type] + '" stroke-width="14" ' +
+        'stroke-dasharray="' + len + ' ' + (circ - len) + '" stroke-dashoffset="' + (-cum) + '" transform="rotate(-90 ' + c + ' ' + c + ')" />';
+      cum += len;
+      return seg;
+    }).join("") + '<circle cx="' + c + '" cy="' + c + '" r="' + (r - 8) + '" fill="var(--panel)" />';
+
+    document.getElementById("alloc-legend").innerHTML = groups.map(function (g) {
+      return '<div class="legend-row"><span class="dot" style="background:' + TYPE_COLOR[g.type] + ';"></span>' +
+        '<span class="lname">' + TYPE_LABEL[g.type] + '</span>' +
+        '<span class="lval">' + fmt(g.value) + '</span>' +
+        '<span class="lpct">' + ((g.value / totalValue) * 100).toFixed(1) + '%</span></div>';
+    }).join("");
+
+    document.getElementById("alloc-groups").innerHTML = groups.map(function (g) {
+      var maxItem = Math.max.apply(null, g.items.map(function (i) { return i.value; }));
+      return '<div class="group">' +
+        '<div class="group-head"><span class="dot" style="background:' + TYPE_COLOR[g.type] + ';"></span><span class="gname">' + TYPE_LABEL[g.type] + '</span><span class="gtotal">' + fmt(g.value) + '</span></div>' +
+        g.items.sort(function (a, b) { return b.value - a.value; }).map(function (h) {
+          var w = (h.value / maxItem) * 100;
+          return '<div class="grow"><div><span class="sym">' + h.symbol + '</span> <span class="nm">' + h.name + '</span></div>' +
+            '<div class="wbar-track"><div class="wbar-fill" style="width:' + w + '%; background:' + TYPE_COLOR[g.type] + ';"></div></div>' +
+            '<div class="val">' + fmt(h.value) + '</div>' +
+            '<div class="gl ' + glClass(h.gain) + '">' + pct(h.gainPct) + '</div></div>';
+        }).join("") +
+        '</div>';
+    }).join("");
+
+    // ============================= Variant C: master-detail with lots =============================
+    var selected = "VTI";
+    function renderMasterDetail() {
+      document.getElementById("md-list").innerHTML = HOLDINGS.slice().sort(function (a, b) { return b.value - a.value; }).map(function (h) {
+        return '<div class="md-row' + (h.symbol === selected ? " is-active" : "") + '" data-sym="' + h.symbol + '">' +
+          '<div><div class="sym">' + h.symbol + '</div><div class="nm">' + TYPE_LABEL[h.type] + '</div></div>' +
+          '<div class="right"><div class="val">' + fmt(h.value) + '</div><div class="gl ' + glClass(h.gain) + '">' + pct(h.gainPct) + '</div></div></div>';
+      }).join("");
+      document.querySelectorAll(".md-row").forEach(function (row) {
+        row.addEventListener("click", function () { selected = row.dataset.sym; renderMasterDetail(); });
+      });
+
+      var h = HOLDINGS.filter(function (x) { return x.symbol === selected; })[0];
+      var lotsHtml;
+      if (h.lots) {
+        lotsHtml = '<table class="lots"><thead><tr><th>Acquired</th><th>Quantity</th><th>Cost / unit</th><th>Cost basis</th><th>Gain / loss</th></tr></thead><tbody>' +
+          h.lots.map(function (lot) {
+            var lotCost = lot.qty * lot.cost;
+            var lotValue = lot.qty * h.price;
+            var lotGain = lotValue - lotCost;
+            return '<tr><td style="text-align:left;">' + lot.date + '</td><td>' + lot.qty.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '</td><td>' + fmt(lot.cost) + '</td><td>' + fmt(lotCost) + '</td><td style="color:' + (lotGain >= 0 ? "var(--positive)" : "var(--negative)") + ';">' + fmt(lotGain) + '</td></tr>';
+          }).join("") + '</tbody></table>';
+      } else {
+        lotsHtml = '<div class="lots-empty">No lot-level detail from this sync — SnapTrade doesn\'t expose tax lots consistently across every brokerage/security (see ADR 0004). <code>tax_lots</code> is null for this holding.</div>';
+      }
+
+      document.getElementById("md-detail").innerHTML =
+        '<div class="md-detail-head"><div><div class="sym">' + h.symbol + '</div><div class="nm">' + h.name + '</div></div><span class="type-tag ' + h.type + '">' + TYPE_LABEL[h.type] + '</span></div>' +
+        '<div class="stat-grid">' +
+          '<div><div class="k">Quantity</div><div class="v">' + h.qty.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '</div></div>' +
+          '<div><div class="k">Avg cost / unit</div><div class="v">' + fmt(h.avgCost) + '</div></div>' +
+          '<div><div class="k">Market price</div><div class="v">' + fmt(h.price) + '</div></div>' +
+          '<div><div class="k">Market value</div><div class="v">' + fmt(h.value) + '</div></div>' +
+          '<div><div class="k">Gain / loss</div><div class="v ' + glClass(h.gain) + '">' + fmt(h.gain) + '<br>' + pct(h.gainPct) + '</div></div>' +
+        '</div>' +
+        '<div class="lots-head"><div class="lt">Tax lots</div><div class="lc">' + (h.lots ? h.lots.length + " lot" + (h.lots.length === 1 ? "" : "s") : "—") + '</div></div>' +
+        lotsHtml;
+    }
+    renderMasterDetail();
+
+    // ============================= Switcher =============================
+    var variants = [
+      { key: "a", name: "Positions Ledger" },
+      { key: "b", name: "Allocation" },
+      { key: "c", name: "Master-Detail + Lots" }
+    ];
+
+    function currentKey() {
+      var params = new URLSearchParams(window.location.search);
+      var v = params.get("variant");
+      return variants.some(function (x) { return x.key === v; }) ? v : "a";
+    }
+
+    function render(key) {
+      document.querySelectorAll(".hv").forEach(function (el) {
+        el.classList.toggle("active", el.dataset.key === key);
+      });
+      var meta = variants.filter(function (x) { return x.key === key; })[0];
+      document.getElementById("sw-label").innerHTML = "<b>" + meta.key.toUpperCase() + "</b><span>" + meta.name + "</span>";
+    }
+
+    function setKey(key) {
+      var params = new URLSearchParams(window.location.search);
+      params.set("variant", key);
+      history.replaceState(null, "", "?" + params.toString());
+      render(key);
+    }
+
+    function cycle(delta) {
+      var idx = variants.findIndex(function (x) { return x.key === currentKey(); });
+      var next = variants[(idx + delta + variants.length) % variants.length];
+      setKey(next.key);
+    }
+
+    document.getElementById("sw-prev").addEventListener("click", function () { cycle(-1); });
+    document.getElementById("sw-next").addEventListener("click", function () { cycle(1); });
+
+    document.addEventListener("keydown", function (e) {
+      var tag = (document.activeElement && document.activeElement.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || (document.activeElement && document.activeElement.isContentEditable)) return;
+      if (e.key === "ArrowLeft") cycle(-1);
+      if (e.key === "ArrowRight") cycle(1);
+    });
+
+    render(currentKey());
+  })();
+</script>
