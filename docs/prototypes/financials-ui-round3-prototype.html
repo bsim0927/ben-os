@@ -1,0 +1,446 @@
+<title>Financials UI — Round 3: Vault, Runway, Ledger</title>
+<style>
+  /* Round 3. Split (round 2) was closest but still felt like two dashboards
+     glued together — not a real answer to "separate but related." Taking
+     more creative liberty: three variants that lean on a *material* or
+     *conceptual* difference between banking and investing, not just a
+     color-coded column. Switchable via ?variant=g|h|i:
+       G — Vault & Ticker: a proportional dial joins two materially
+           different renderings — a printed register vs an LED ticker board.
+       H — Runway & Horizon: contrasts the two accounts' actual TIME SCALES
+           (this week vs this decade) as the organizing idea, joined by a
+           single "Now" line running through both.
+       I — Ledger & Statement: a literal two-page spread — a warm handwritten
+           personal ledger next to a formal dark statement, spine down the
+           middle. Same Console shell as prior rounds (sidebar/crumb-row
+           fixed, not a variant). */
+
+  :root { color-scheme: dark; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  button { font-family: inherit; }
+  :focus-visible { outline: 2px solid #38BDF8; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  body {
+    --bg: #0B0D10;
+    --panel: #14171B;
+    --panel-2: #191D22;
+    --panel-3: #1E232A;
+    --border: #232830;
+    --text: #E6E9ED;
+    --muted: #838C99;
+    --accent: #38BDF8;
+    --positive: #34D399;
+    --negative: #F87171;
+    --bank: #7DD3E8;
+    --invest: #D4A94C;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "SF Pro Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ============================= Shell (fixed) ============================= */
+  .sidebar { width: 232px; flex: none; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 20px 12px; gap: 28px; }
+  .wordmark { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; letter-spacing: 0.08em; color: var(--muted); padding: 0 8px; }
+  .wordmark b { color: var(--text); }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; font-size: 13.5px; color: var(--muted); border-left: 2px solid transparent; text-decoration: none; }
+  .nav-item svg { width: 16px; height: 16px; flex: none; }
+  .nav-item.is-active { color: var(--text); background: var(--panel-2); border-left-color: var(--accent); }
+  .nav-item.is-soon { opacity: 0.45; cursor: default; }
+  .nav-soon-tag { margin-left: auto; font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 6px; }
+  .sidebar-spacer { flex: 1; }
+  .account-chip { display: flex; align-items: center; gap: 10px; padding: 10px; border-top: 1px solid var(--border); }
+  .avatar { width: 26px; height: 26px; border-radius: 6px; background: var(--accent); color: #04121A; display: grid; place-items: center; font-size: 12px; font-weight: 700; flex: none; }
+  .account-chip .who { font-size: 12px; }
+  .account-chip .sub { font-size: 11px; color: var(--muted); }
+
+  main { flex: 1; min-width: 0; padding: 28px 36px 100px; }
+  .crumb-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .crumb { font-size: 12.5px; color: var(--muted); }
+  .crumb b { color: var(--text); font-weight: 500; }
+  .sync-chip { font-size: 11.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+
+  .fv { display: none; }
+  .fv.active { display: block; }
+
+  /* ============================= Variant G: Vault & Ticker ============================= */
+  .fv-g .vault-wrap { display: flex; justify-content: center; margin-bottom: 30px; }
+  .fv-g .vault { position: relative; width: 156px; height: 156px; }
+  .fv-g .vault svg { transform: rotate(-90deg); }
+  .fv-g .vault .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .fv-g .vault .center .amt { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 19px; font-weight: 600; }
+  .fv-g .vault .center .lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+  .fv-g .vault-legend { display: flex; justify-content: center; gap: 22px; margin-bottom: 30px; font-size: 11.5px; color: var(--muted); }
+  .fv-g .vault-legend .item { display: flex; align-items: center; gap: 6px; }
+  .fv-g .vault-legend .dot { width: 8px; height: 8px; border-radius: 2px; }
+  .fv-g .vault-legend b { color: var(--text); font-variant-numeric: tabular-nums; margin-left: 2px; }
+
+  .fv-g .materials { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 900px) { .fv-g .materials { grid-template-columns: 1fr; } }
+
+  /* Register (printed ledger receipt) */
+  .fv-g .register { background: #17140F; border: 1px solid #2E2416; border-radius: 4px; padding: 18px 20px 20px; position: relative; }
+  .fv-g .register::before, .fv-g .register::after { content: ""; position: absolute; left: 0; right: 0; height: 1px; background: repeating-linear-gradient(90deg, #3A2E1B 0 6px, transparent 6px 11px); }
+  .fv-g .register::before { top: 0; }
+  .fv-g .register::after { bottom: 0; }
+  .fv-g .register .rhead { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #C9A66B; margin-bottom: 14px; display: flex; justify-content: space-between; }
+  .fv-g .register table { width: 100%; border-collapse: collapse; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: #E8DCC4; }
+  .fv-g .register th { text-align: left; font-weight: 400; color: #8A7A5C; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.05em; padding: 0 4px 8px; }
+  .fv-g .register th.r { text-align: right; }
+  .fv-g .register td { padding: 6px 4px; border-top: 1px dashed #2E2416; font-variant-numeric: tabular-nums; }
+  .fv-g .register td.r { text-align: right; }
+  .fv-g .register td.bal { color: #C9A66B; }
+  .fv-g .register td.neg { color: #E8DCC4; }
+  .fv-g .register td.pos { color: #7FCB9E; }
+
+  /* Ticker (LED board) */
+  .fv-g .ticker-board { background: #0A0C0E; border: 1px solid #1C2A2E; border-radius: 4px; padding: 18px 20px 20px; }
+  .fv-g .ticker-board .thead { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #5FA8B8; margin-bottom: 10px; }
+  .fv-g .led-amount { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 30px; font-weight: 700; color: var(--invest); text-shadow: 0 0 12px rgba(212,169,76,0.55), 0 0 2px rgba(212,169,76,0.8); letter-spacing: 0.01em; margin-bottom: 4px; }
+  .fv-g .led-delta { font-family: ui-monospace, monospace; font-size: 12px; color: #7FCB9E; text-shadow: 0 0 8px rgba(127,203,158,0.5); margin-bottom: 16px; }
+  .fv-g .marquee-wrap { overflow-x: auto; border-top: 1px solid #1C2A2E; border-bottom: 1px solid #1C2A2E; padding: 10px 0; }
+  .fv-g .marquee { display: flex; gap: 10px; width: max-content; animation: fv-g-scroll 16s linear infinite; }
+  @keyframes fv-g-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .fv-g .chip { font-family: ui-monospace, monospace; font-size: 11px; border: 1px solid #223034; border-radius: 4px; padding: 5px 10px; white-space: nowrap; background: #0F1416; }
+  .fv-g .chip .v { font-weight: 600; }
+  .fv-g .chip .v.pos { color: #7FCB9E; }
+  .fv-g .chip .v.neg { color: #E38C8C; }
+  .fv-g .chip .tag { color: #5FA8B8; margin-left: 6px; font-size: 9.5px; text-transform: uppercase; }
+  .fv-g .board-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+  .fv-g .board-stats .bs { border: 1px solid #1C2A2E; border-radius: 4px; padding: 9px 11px; }
+  .fv-g .board-stats .bs .k { font-size: 9.5px; color: #5FA8B8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .fv-g .board-stats .bs .v { font-family: ui-monospace, monospace; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+  /* ============================= Variant H: Runway & Horizon ============================= */
+  .fv-h .now-rail { position: relative; }
+  .fv-h .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; margin-bottom: 22px; position: relative; }
+  .fv-h .panel .p-eyebrow { font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .fv-h .panel .p-title { font-size: 15px; margin-bottom: 16px; }
+  .fv-h .panel.bank .p-eyebrow { color: var(--bank); }
+  .fv-h .panel.invest .p-eyebrow { color: var(--invest); }
+
+  .fv-h .runway-gauge { margin-bottom: 18px; }
+  .fv-h .rg-track { position: relative; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #F87171 0%, #F87171 25%, #D4A94C 25%, #D4A94C 50%, #34D399 50%, #34D399 100%); }
+  .fv-h .rg-pin { position: absolute; top: -5px; width: 2px; height: 18px; background: var(--text); }
+  .fv-h .rg-pin::after { content: attr(data-label); position: absolute; top: -20px; left: 50%; transform: translateX(-50%); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .fv-h .rg-caption { font-size: 12px; color: var(--muted); margin-top: 22px; }
+  .fv-h .rg-caption b { color: var(--text); }
+
+  .fv-h .heat-strip { display: flex; gap: 5px; margin-bottom: 16px; }
+  .fv-h .heat-strip .day { flex: 1; text-align: center; }
+  .fv-h .heat-strip .sq { height: 30px; border-radius: 4px; background: var(--bank); margin-bottom: 5px; }
+  .fv-h .heat-strip .lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; }
+
+  .fv-h .quiet-list { display: flex; flex-direction: column; gap: 7px; }
+  .fv-h .quiet-list .row { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+  .fv-h .quiet-list .row .amt { font-variant-numeric: tabular-nums; color: var(--text); }
+  .fv-h .quiet-list .row .amt.pos { color: var(--positive); }
+
+  .fv-h .now-tick { position: absolute; top: 22px; right: 20px; font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .fv-h .now-line { position: absolute; right: 24px; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--accent); opacity: 0.5; pointer-events: none; }
+
+  .fv-h .horizon-line { width: 100%; margin-bottom: 8px; }
+  .fv-h .year-labels { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); margin-bottom: 18px; padding: 0 2px; }
+  .fv-h .horizon-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+  .fv-h .horizon-stats .hs { }
+  .fv-h .horizon-stats .hs .k { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .fv-h .horizon-stats .hs .v { font-size: 16px; font-variant-numeric: tabular-nums; }
+
+  /* ============================= Variant I: Ledger & Statement ============================= */
+  .fv-i .spread { display: grid; grid-template-columns: 1fr 20px 1fr; align-items: stretch; }
+  @media (max-width: 900px) { .fv-i .spread { grid-template-columns: 1fr; } .fv-i .spine { display: none; } }
+
+  .fv-i .spine { background: linear-gradient(90deg, rgba(0,0,0,0.35), rgba(0,0,0,0.05) 30%, rgba(0,0,0,0.05) 70%, rgba(0,0,0,0.35)); position: relative; }
+  .fv-i .spine .tag { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(180deg); writing-mode: vertical-rl; font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: 0.08em; color: var(--muted); white-space: nowrap; }
+
+  .fv-i .page { border-radius: 10px; padding: 26px 26px 30px; min-height: 460px; }
+
+  .fv-i .page-left { background: #F2ECDD; color: #2B2620; border-radius: 10px 4px 4px 10px; font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif; box-shadow: inset -8px 0 14px -12px rgba(0,0,0,0.35); }
+  .fv-i .page-left .eyebrow { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #8A7E63; margin-bottom: 4px; }
+  .fv-i .page-left h2 { font-size: 20px; font-weight: 500; margin: 0 0 4px; }
+  .fv-i .page-left .bal { font-size: 26px; font-variant-numeric: tabular-nums; margin-bottom: 22px; }
+  .fv-i .page-left table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .fv-i .page-left th { text-align: left; font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 500; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #8A7E63; padding: 0 6px 8px; border-bottom: 1px solid #C9BE9E; }
+  .fv-i .page-left th.r { text-align: right; }
+  .fv-i .page-left td { padding: 8px 6px; border-bottom: 1px solid #DCD3B8; font-variant-numeric: tabular-nums; }
+  .fv-i .page-left td.r { text-align: right; }
+  .fv-i .page-left td.bal-col { color: #7A6E4E; }
+  .fv-i .page-left td.neg { color: #6B4A3A; }
+  .fv-i .page-left td.pos { color: #3E6E52; }
+
+  .fv-i .page-right { background: #101317; border: 1px solid #232830; border-radius: 4px 10px 10px 4px; box-shadow: inset 8px 0 14px -12px rgba(0,0,0,0.5); font-family: Charter, "Iowan Old Style", Georgia, serif; }
+  .fv-i .page-right .stmt-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+  .fv-i .page-right .eyebrow { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--invest); margin-bottom: 4px; }
+  .fv-i .page-right h2 { font-size: 20px; font-weight: 500; margin: 0 0 4px; color: #F2F3F5; }
+  .fv-i .page-right .acct-id { font-family: ui-monospace, monospace; font-size: 11px; color: #6B7280; }
+  .fv-i .page-right .period { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10.5px; color: #6B7280; margin-bottom: 20px; }
+  .fv-i .page-right .bal { font-size: 30px; font-variant-numeric: tabular-nums; color: #F2F3F5; margin: 10px 0 24px; border-top: 1px solid #232830; border-bottom: 1px solid #232830; padding: 14px 0; }
+  .fv-i .page-right table { width: 100%; border-collapse: collapse; font-size: 13px; color: #D7DAE0; }
+  .fv-i .page-right th { text-align: left; font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 500; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #6B7280; padding: 0 6px 8px; border-bottom: 1px solid #232830; }
+  .fv-i .page-right th.r { text-align: right; }
+  .fv-i .page-right td { padding: 9px 6px; border-bottom: 1px solid #1A1E24; font-variant-numeric: tabular-nums; }
+  .fv-i .page-right td.r { text-align: right; }
+  .fv-i .page-right td.pos { color: var(--positive); }
+  .fv-i .page-right .type-tag { font-size: 10px; color: var(--invest); text-transform: uppercase; letter-spacing: 0.04em; }
+
+  /* ============================= Prototype switcher ============================= */
+  #switcher { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: #111318; color: #F2F3F5; border-radius: 999px; padding: 6px 6px 6px 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08); font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px; z-index: 1000; }
+  #switcher .swlabel { min-width: 220px; text-align: center; font-variant-numeric: tabular-nums; }
+  #switcher .swlabel b { font-weight: 600; }
+  #switcher .swlabel span { color: #9198A6; margin-left: 6px; }
+  #switcher button.arrow { width: 30px; height: 30px; border-radius: 50%; border: none; background: rgba(255,255,255,0.08); color: inherit; cursor: pointer; display: grid; place-items: center; font-size: 15px; }
+  #switcher button.arrow:hover { background: rgba(255,255,255,0.16); }
+</style>
+
+<!-- ============================= Shell (fixed) ============================= -->
+<aside class="sidebar">
+  <div class="wordmark"><b>ben</b>/os</div>
+  <nav>
+    <a class="nav-item is-active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17l5-6 4 4 8-10"/><path d="M14 5h6v6"/></svg>Financials</a>
+    <a class="nav-item is-soon" href="#" aria-disabled="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18v12H3z"/><path d="M3 7l9 6 9-6"/></svg>Email <span class="nav-soon-tag">Soon</span></a>
+    <a class="nav-item is-soon" href="#" aria-disabled="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 3v3M16 3v3"/></svg>Calendar <span class="nav-soon-tag">Soon</span></a>
+    <a class="nav-item is-soon" href="#" aria-disabled="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>Notes <span class="nav-soon-tag">Soon</span></a>
+  </nav>
+  <div class="sidebar-spacer"></div>
+  <div class="account-chip"><div class="avatar">B</div><div><div class="who">Ben</div><div class="sub">Synced 2h ago</div></div></div>
+</aside>
+
+<main>
+  <div class="crumb-row">
+    <div class="crumb"><b>Financials</b> / Net worth</div>
+    <div class="sync-chip">2 accounts · synced 2h ago</div>
+  </div>
+
+  <!-- ============================= Variant G: Vault & Ticker ============================= -->
+  <div class="fv fv-g" data-key="g" data-name="Vault &amp; Ticker — printed register vs. LED board">
+    <div class="vault-wrap">
+      <div class="vault">
+        <svg width="156" height="156" viewBox="0 0 156 156">
+          <circle cx="78" cy="78" r="66" fill="none" stroke="#1C2126" stroke-width="12"/>
+          <circle cx="78" cy="78" r="66" fill="none" stroke="var(--bank)" stroke-width="12" stroke-dasharray="60.6 354.7" stroke-linecap="round"/>
+          <circle cx="78" cy="78" r="66" fill="none" stroke="var(--invest)" stroke-width="12" stroke-dasharray="354.1 61.2" stroke-dashoffset="-60.6" stroke-linecap="round"/>
+        </svg>
+        <div class="center"><div class="amt">$84,480.83</div><div class="lbl">Net worth</div></div>
+      </div>
+    </div>
+    <div class="vault-legend">
+      <div class="item"><span class="dot" style="background:var(--bank);"></span>Chase Checking<b>14.6%</b></div>
+      <div class="item"><span class="dot" style="background:var(--invest);"></span>Fidelity Brokerage<b>85.4%</b></div>
+    </div>
+
+    <div class="materials">
+      <div class="register">
+        <div class="rhead"><span>Chase · Register</span><span>#1092</span></div>
+        <table>
+          <thead><tr><th>Date</th><th>Entry</th><th class="r">Amt</th><th class="r">Bal</th></tr></thead>
+          <tbody id="g-register-body"></tbody>
+        </table>
+      </div>
+      <div class="ticker-board">
+        <div class="thead">Fidelity · Ticker</div>
+        <div class="led-amount">$72,140.73</div>
+        <div class="led-delta">▲ +$1,210.00 (1.7%) 3M</div>
+        <div class="marquee-wrap">
+          <div class="marquee" id="g-marquee"></div>
+        </div>
+        <div class="board-stats">
+          <div class="bs"><div class="k">This month</div><div class="v">+$1,660.90 in</div></div>
+          <div class="bs"><div class="k">Fees YTD</div><div class="v">−$74.20</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================= Variant H: Runway & Horizon ============================= -->
+  <div class="fv fv-h" data-key="h" data-name="Runway &amp; Horizon — two accounts, two clocks">
+    <div class="panel bank">
+      <div class="now-tick">Now</div>
+      <div class="now-line"></div>
+      <div class="p-eyebrow">This week — Chase Checking</div>
+      <div class="p-title">Runway at current pace</div>
+      <div class="runway-gauge">
+        <div class="rg-track"><div class="rg-pin" style="left: 56.7%;" data-label="68 days"></div></div>
+      </div>
+      <div class="rg-caption">Covers <b>68 days</b> of spend at your trailing average — comfortably in the green.</div>
+      <div class="heat-strip">
+        <div class="day"><div class="sq" style="opacity:0.12;"></div><div class="lbl">Mon</div></div>
+        <div class="day"><div class="sq" style="opacity:0.28;"></div><div class="lbl">Tue</div></div>
+        <div class="day"><div class="sq" style="opacity:0.85;"></div><div class="lbl">Wed</div></div>
+        <div class="day"><div class="sq" style="opacity:0.1;"></div><div class="lbl">Thu</div></div>
+        <div class="day"><div class="sq" style="opacity:0.22;"></div><div class="lbl">Fri</div></div>
+        <div class="day"><div class="sq" style="opacity:0.65;"></div><div class="lbl">Sat</div></div>
+        <div class="day"><div class="sq" style="opacity:0.1;"></div><div class="lbl">Sun</div></div>
+      </div>
+      <div class="quiet-list">
+        <div class="row"><span>Aug 1 · Whole Foods Market</span><span class="amt">−$86.42</span></div>
+        <div class="row"><span>Jul 31 · Spotify</span><span class="amt">−$11.99</span></div>
+        <div class="row"><span>Jul 31 · Acme Corp Payroll</span><span class="amt pos">+$3,120.00</span></div>
+      </div>
+    </div>
+
+    <div class="panel invest">
+      <div class="now-tick">Now</div>
+      <div class="now-line"></div>
+      <div class="p-eyebrow">This decade — Fidelity Brokerage</div>
+      <div class="p-title">Growth since first contribution</div>
+      <svg class="horizon-line" viewBox="0 0 620 90" preserveAspectRatio="none">
+        <polyline points="10,78 155,58 300,42 445,26 600,14" fill="none" stroke="var(--invest)" stroke-width="2"/>
+        <circle cx="10" cy="78" r="3.5" fill="var(--invest)"/>
+        <circle cx="155" cy="58" r="3.5" fill="var(--invest)"/>
+        <circle cx="300" cy="42" r="3.5" fill="var(--invest)"/>
+        <circle cx="445" cy="26" r="3.5" fill="var(--invest)"/>
+        <circle cx="600" cy="14" r="5" fill="var(--invest)" stroke="#0B0D10" stroke-width="2"/>
+      </svg>
+      <div class="year-labels"><span>2022</span><span>2023</span><span>2024</span><span>2025</span><span>Now</span></div>
+      <div class="horizon-stats">
+        <div class="hs"><div class="k">Time in market</div><div class="v">3y 9mo</div></div>
+        <div class="hs"><div class="k">Contribution streak</div><div class="v">11 of last 12 months</div></div>
+      </div>
+      <div class="quiet-list">
+        <div class="row"><span>Aug 1 · Dividend — VTI</span><span class="amt pos">+$142.30</span></div>
+        <div class="row"><span>Jul 31 · Contribution</span><span class="amt pos">+$1,000.00</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================= Variant I: Ledger & Statement ============================= -->
+  <div class="fv fv-i" data-key="i" data-name="Ledger &amp; Statement — a two-page spread">
+    <div class="spread">
+      <div class="page page-left">
+        <div class="eyebrow">Everyday ledger</div>
+        <h2>Chase Checking</h2>
+        <div class="bal">$12,340.10</div>
+        <table>
+          <thead><tr><th>Date</th><th>Entry</th><th class="r">Amt</th><th class="r">Bal</th></tr></thead>
+          <tbody id="i-ledger-body"></tbody>
+        </table>
+      </div>
+      <div class="spine"><div class="tag">NET WORTH · $84,480.83</div></div>
+      <div class="page page-right">
+        <div class="stmt-head">
+          <div>
+            <div class="eyebrow">Statement</div>
+            <h2>Fidelity Brokerage</h2>
+            <div class="acct-id">Account ••1092</div>
+          </div>
+        </div>
+        <div class="period">Period: Jul 5 – Aug 1, 2026</div>
+        <div class="bal">$72,140.73</div>
+        <table>
+          <thead><tr><th>Date</th><th>Description</th><th>Type</th><th class="r">Amount</th></tr></thead>
+          <tbody id="i-statement-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ============================= Switcher ============================= -->
+<div id="switcher">
+  <button class="arrow" id="sw-prev" aria-label="Previous variant">&#8249;</button>
+  <div class="swlabel" id="sw-label"></div>
+  <button class="arrow" id="sw-next" aria-label="Next variant">&#8250;</button>
+</div>
+
+<script>
+  (function () {
+    var CHASE_REG = [
+      { date: "Jul 28", entry: "Con Edison", amount: -142.18, bal: 9389.56 },
+      { date: "Jul 28", entry: "Amazon", amount: -64.30, bal: 9325.26 },
+      { date: "Jul 31", entry: "Spotify", amount: -11.99, bal: 9313.27 },
+      { date: "Jul 31", entry: "Acme Corp Payroll", amount: 3120.00, bal: 12433.27 },
+      { date: "Aug 1", entry: "Whole Foods Market", amount: -86.42, bal: 12346.85 },
+      { date: "Aug 1", entry: "Blue Bottle Coffee", amount: -6.75, bal: 12340.10 }
+    ];
+
+    var FIDELITY_ACTIVITY = [
+      { date: "Jul 5", desc: "Contribution", type: "Contribution", amount: 500.00 },
+      { date: "Jul 15", desc: "Dividend — VXUS", type: "Dividend", amount: 36.10 },
+      { date: "Jul 20", desc: "Advisory fee", type: "Fee", amount: -18.50 },
+      { date: "Jul 31", desc: "Contribution", type: "Contribution", amount: 1000.00 },
+      { date: "Aug 1", desc: "Dividend — VTI", type: "Dividend", amount: 142.30 }
+    ];
+
+    function fmt(amount) {
+      var abs = Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return (amount < 0 ? "−$" : "+$") + abs;
+    }
+    function fmtBal(amount) {
+      return "$" + amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function registerRows(idPrefix) {
+      return CHASE_REG.map(function (r) {
+        return '<tr><td>' + r.date + '</td><td>' + r.entry + '</td>' +
+          '<td class="r ' + (r.amount > 0 ? 'pos' : 'neg') + '">' + fmt(r.amount) + '</td>' +
+          '<td class="r bal-col">' + fmtBal(r.bal) + '</td></tr>';
+      }).join("");
+    }
+
+    document.getElementById("g-register-body").innerHTML = CHASE_REG.map(function (r) {
+      return '<tr><td>' + r.date + '</td><td>' + r.entry + '</td>' +
+        '<td class="r ' + (r.amount > 0 ? 'pos' : 'neg') + '">' + fmt(r.amount) + '</td>' +
+        '<td class="r bal">' + fmtBal(r.bal) + '</td></tr>';
+    }).join("");
+
+    document.getElementById("i-ledger-body").innerHTML = registerRows("i");
+
+    document.getElementById("i-statement-body").innerHTML = FIDELITY_ACTIVITY.slice().reverse().map(function (t) {
+      return '<tr><td>' + t.date + '</td><td>' + t.desc + '</td><td class="type-tag">' + t.type + '</td>' +
+        '<td class="r ' + (t.amount > 0 ? 'pos' : '') + '">' + fmt(t.amount) + '</td></tr>';
+    }).join("");
+
+    var chips = FIDELITY_ACTIVITY.slice().reverse().map(function (t) {
+      return '<div class="chip"><span class="v ' + (t.amount > 0 ? 'pos' : 'neg') + '">' + fmt(t.amount) + '</span><span class="tag">' + t.type + '</span></div>';
+    }).join("");
+    document.getElementById("g-marquee").innerHTML = chips + chips;
+
+    // ============================= Switcher =============================
+    var variants = [
+      { key: "g", name: "Vault & Ticker" },
+      { key: "h", name: "Runway & Horizon" },
+      { key: "i", name: "Ledger & Statement" }
+    ];
+
+    function currentKey() {
+      var params = new URLSearchParams(window.location.search);
+      var v = params.get("variant");
+      return variants.some(function (x) { return x.key === v; }) ? v : "g";
+    }
+
+    function render(key) {
+      document.querySelectorAll(".fv").forEach(function (el) { el.classList.toggle("active", el.dataset.key === key); });
+      var meta = variants.filter(function (x) { return x.key === key; })[0];
+      document.getElementById("sw-label").innerHTML = "<b>" + meta.key.toUpperCase() + "</b><span>" + meta.name + "</span>";
+    }
+
+    function setKey(key) {
+      var params = new URLSearchParams(window.location.search);
+      params.set("variant", key);
+      history.replaceState(null, "", "?" + params.toString());
+      render(key);
+    }
+
+    function cycle(delta) {
+      var idx = variants.findIndex(function (x) { return x.key === currentKey(); });
+      var next = variants[(idx + delta + variants.length) % variants.length];
+      setKey(next.key);
+    }
+
+    document.getElementById("sw-prev").addEventListener("click", function () { cycle(-1); });
+    document.getElementById("sw-next").addEventListener("click", function () { cycle(1); });
+    document.addEventListener("keydown", function (e) {
+      var tag = (document.activeElement && document.activeElement.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || (document.activeElement && document.activeElement.isContentEditable)) return;
+      if (e.key === "ArrowLeft") cycle(-1);
+      if (e.key === "ArrowRight") cycle(1);
+    });
+
+    render(currentKey());
+  })();
+</script>
