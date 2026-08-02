@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+pnpm-lock.yaml
+next-env.d.ts
+.claude/
+
+# Throwaway design artifacts — reformatting them only adds diff noise.
+docs/prototypes/

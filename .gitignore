@@ -1,1 +1,33 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# builds
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# test output
+coverage/
+
+# env
+.env
+.env.*
+!.env.example
+
+# editors / os
+.DS_Store
+*.pem
+
+# logs
+*-debug.log*
+
+# deploy
+.vercel
+
+# local agent config
 .claude/settings.local.json
+.claude/worktrees/

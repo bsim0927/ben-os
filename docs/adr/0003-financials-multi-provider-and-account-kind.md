@@ -6,7 +6,7 @@
 Grilling session, prompted by wanting to distinguish bank accounts from brokerage accounts. Two findings from the SimpleFIN research (issue #2) shaped the outcome:
 
 - SimpleFIN's Account object is identical for every account type — `id`, `name`, `conn_id`, `currency`, `balance`, `balance-date`, `available-balance`, `transactions`, `extra`. No account-type field, and no holdings/positions/securities data anywhere in the protocol.
-- A brokerage account's *balance* can come through SimpleFIN like any other account, but real per-security holdings data cannot — that requires a second provider, not yet chosen, which needs its own research ticket before `financials_holding` (or equivalent) can be designed.
+- A brokerage account's _balance_ can come through SimpleFIN like any other account, but real per-security holdings data cannot — that requires a second provider, not yet chosen, which needs its own research ticket before `financials_holding` (or equivalent) can be designed.
 
 Decisions:
 

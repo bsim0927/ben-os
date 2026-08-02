@@ -1,0 +1,10 @@
+packages:
+  - "apps/*"
+
+# Dependency build scripts are blocked by default; these three are required.
+# sharp powers Next's image optimizer, unrs-resolver backs eslint's import
+# resolution, and esbuild is vitest's transform pipeline.
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true
