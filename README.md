@@ -45,6 +45,9 @@ places:
 - **App layer** — `apps/web/proxy.ts` runs on every request and turns away anyone who isn't the
   allowed account; `app/(modules)/layout.tsx` checks again before rendering the shell. Two checks,
   because a routing mistake in one should cost a redirect, not the app's privacy.
+  Two prefixes are exempt, and only two: `/auth`, which is the sign-in round trip itself, and
+  `/api/cron`, reached by a scheduler that has no Google session and never can. Cron routes gate on
+  a bearer secret instead (`lib/cron.ts`), and fail closed when it isn't set.
 - **Database** — `public.is_authorized()` (`supabase/migrations/`) compares the JWT's `email` claim
   against the same address. Per [ADR 0001](docs/adr/0001-baseline-supabase-schema-conventions.md),
   every module table's RLS policy calls it, so data stays protected even if the app layer is wrong.
@@ -124,6 +127,91 @@ dimming, and the crumb row all read from that registry — nothing in the shell 
 Modules that aren't built yet stay in the registry with `status: "soon"`, and render dimmed with a
 "Soon" tag rather than being hidden.
 
+## Financials
+
+The first module with real data behind it. Its tables (`financials_*`) follow
+[ADR 0002](docs/adr/0002-financials-schema.md) as amended by
+[ADR 0003](docs/adr/0003-financials-multi-provider-and-account-kind.md); the protocol notes behind
+the sync are in [`docs/research/simplefin-bridge-api.md`](docs/research/simplefin-bridge-api.md).
+
+`/financials` today is a **raw-data view** — accounts, balance snapshots and transactions as plain
+tables. It exists to make sync correctness visible, and the designed surfaces (net worth, the flow
+view, the Fidelity balance bridge, holdings) come in later tickets.
+
+### Linking SimpleFIN
+
+A Setup Token is redeemable **exactly once**. Generate one in SimpleFIN Bridge, then, signed in as
+the authorized account:
+
+```sh
+curl -X POST https://<deployment>/api/financials/claim \
+  -H 'Content-Type: application/json' \
+  -b '<your session cookies>' \
+  -d '{"setupToken":"<token>"}'
+```
+
+The response carries the **Access URL**. Nothing stores it — put it in `SIMPLEFIN_ACCESS_URL`
+straight away, because claiming again returns `403` and a new token is the only way back.
+Per [ADR 0002](docs/adr/0002-financials-schema.md) it stays a server-side secret and never becomes a
+database row: it is one Basic Auth credential covering the whole Bridge subscription, so a database
+leak must not also be a bank leak.
+
+### The scheduled sync
+
+`apps/web/vercel.json` runs `/api/cron/financials-sync` hourly, at **minute 37**. Both halves are
+deliberate: hourly lands on Bridge's ~24 requests/day budget, and an off-the-hour minute is what
+Bridge asks for to spread load. Note that hourly sits _at_ the budget rather than under it, so a
+manual re-run spends headroom Bridge only informally offers ("a little leeway"); if warnings start
+appearing in `errlist`, widening the interval is the first lever.
+
+Each poll fetches an overlapping **5-day** window rather than "everything since last sync", because
+institutions post transactions late — the overlap is free, since
+`(account_id, provider_transaction_id)` dedupes it.
+
+The **first** poll is the exception: against an empty database a 5-day window would mean history
+began five days ago, and no later poll would go back for the rest, so the first one asks for the
+full 90 days a single call may cover. That is a cold start, not a backfill — deeper history would
+need a separate job walking successive 90-day windows against the same daily budget, and how far
+back an institution will go varies anyway.
+
+Three behaviours worth knowing before reading the code:
+
+- **One transaction per connection, not per poll.** Postgres aborts a whole transaction on the first
+  failed statement, so a shared one would let a single broken connection roll back everybody
+  else's writes. Per-connection units are what make `errlist`'s partial failures survivable.
+- **The job runs under RLS.** It connects with `DATABASE_URL`, then drops to `authenticated` and
+  presents the authorized email as a JWT claim (`lib/financials/db.ts`). The service role would have
+  been easier and would have bypassed every policy — which would make the sync the one client that
+  never tests the backstop ADR 0001 exists to provide.
+  Both settings are established **inside each transaction**, not once per connection. That is what
+  makes any of Supabase's connection strings safe to use: a pooler in transaction mode gives each
+  transaction its own backend, so session-level settings could land on one that is released before
+  the work runs — leaving it as the superuser the pool dialled, with `BYPASSRLS`, and nothing would
+  fail. The writes would succeed and the backstop would be silently gone.
+- **Sync never writes user-owned columns.** `financials_account.kind`, `.status`, and
+  `financials_transaction.category_id` are set by the user and pointedly absent from every `on
+conflict do update` list, so a poll can't undo a categorization or reopen a closed account.
+  Nothing yet _sets_ `status = 'closed'` — that is a user action, arriving with the UI that offers
+  it. Sync deliberately won't infer closure from an account's absence: a broken connection returns
+  no accounts either, and guessing wrong would drop a live account out of net worth.
+
+> [!NOTE]
+> Vercel's Hobby plan runs cron jobs at most **once a day** and caps them at two. On Hobby the
+> hourly schedule above is silently reduced to daily — the sync still works, it just samples net
+> worth once a day. Pro is what makes the 5-day overlap and hourly cadence behave as designed.
+
+### Testing the sync
+
+`pnpm test` starts a **real Postgres 17** (`embedded-postgres`, no Docker required), applies
+`supabase/migrations/` on top of a minimal Supabase bootstrap — the three roles, `auth.jwt()` — and
+runs the sync against it with RLS switched on and fixture SimpleFIN responses served through a
+stubbed `fetch`. It costs well under a second and needs nothing installed.
+
+That is worth the dependency because this job's behaviour largely _is_ SQL: the upsert keys that
+make an overlapping poll idempotent, the predicate that prunes a vanished pending transaction, and
+the policies that decide whether the job may write at all. A fake query layer would only assert that
+the tests agree with themselves.
+
 ## Quality gates
 
 Two layers, deliberately asymmetric:
@@ -144,3 +232,19 @@ Vercel project settings:
 - **Include source files outside of the Root Directory**: on (needed for the pnpm workspace)
 
 Build/install commands are auto-detected; the root `packageManager` field pins pnpm for the build.
+
+Environment variables, from `apps/web/.env.example`. The first three are needed to render anything;
+the last three are needed for the Financials sync, and are **secrets** — none may be given a
+`NEXT_PUBLIC_` name, which would publish them in the browser bundle:
+
+| Variable                        | Why                                                    |
+| ------------------------------- | ------------------------------------------------------ |
+| `NEXT_PUBLIC_SUPABASE_URL`      | Project URL                                            |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publishable key; RLS is what protects the data         |
+| `NEXT_PUBLIC_SITE_URL`          | This deployment's own origin, for the sign-in redirect |
+| `SIMPLEFIN_ACCESS_URL`          | The claimed SimpleFIN credential                       |
+| `DATABASE_URL`                  | Direct Postgres, for the sync job only                 |
+| `CRON_SECRET`                   | Gates `/api/cron/*`; Vercel Cron sends it as a bearer  |
+
+`vercel.json` lives in `apps/web/` rather than the repo root, because Vercel reads it relative to the
+Root Directory above.

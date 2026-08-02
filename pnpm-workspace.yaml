@@ -1,10 +1,13 @@
 packages:
   - "apps/*"
 
-# Dependency build scripts are blocked by default; these three are required.
+# Dependency build scripts are blocked by default; these four are required.
 # sharp powers Next's image optimizer, unrs-resolver backs eslint's import
-# resolution, and esbuild is vitest's transform pipeline.
+# resolution, esbuild is vitest's transform pipeline, and the embedded-postgres
+# binaries need their postinstall to become executable (it is what the
+# financials sync tests run their real Postgres from).
 allowBuilds:
+  "@embedded-postgres/linux-x64": true
   esbuild: true
   sharp: true
   unrs-resolver: true
