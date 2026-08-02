@@ -1,0 +1,165 @@
+"use client";
+
+import { useId } from "react";
+
+import { areaChartGeometry, type ChartDatum } from "@/lib/chart";
+
+/**
+ * The area chart the Console draws: gridlines, a filled trend, an emphasised
+ * endpoint. All the arithmetic lives in `lib/chart`; this is only markup.
+ *
+ * The SVG is `aria-hidden` and the same data is repeated as a visually-hidden
+ * table. A chart that exists only as a path is unreadable to a screen reader and
+ * unassertable in a test, and one honest text alternative fixes both.
+ */
+
+const WIDTH = 960;
+const HEIGHT = 280;
+/** Left leaves room for the value labels, bottom for the two date labels. */
+const PADDING = { top: 16, right: 10, bottom: 26, left: 64 };
+
+export type AreaChartProps = {
+  data: readonly ChartDatum[];
+  /** What the chart is of, for the hidden table's caption. */
+  caption: string;
+  /** Exact rendering, for the text alternative. */
+  formatValue: (value: number) => string;
+  /** Abbreviated rendering, for axis labels that would otherwise collide. */
+  formatTick: (value: number) => string;
+  /** Turns a datum's x back into something readable — here, a date. */
+  formatX: (x: number) => string;
+  /** Column heading for the value column of the hidden table. */
+  valueLabel: string;
+};
+
+export function AreaChart({
+  data,
+  caption,
+  formatValue,
+  formatTick,
+  formatX,
+  valueLabel,
+}: AreaChartProps) {
+  const fillId = useId();
+  const { points, line, area, gridlines, endpoint } = areaChartGeometry({
+    data,
+    width: WIDTH,
+    height: HEIGHT,
+    padding: PADDING,
+  });
+
+  const floor = HEIGHT - PADDING.bottom;
+
+  return (
+    <figure className="m-0">
+      <svg
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        className="h-auto w-full"
+        preserveAspectRatio="xMidYMid meet"
+        aria-hidden="true"
+      >
+        <defs>
+          <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" className="text-accent" stopColor="currentColor" stopOpacity="0.28" />
+            <stop offset="100%" className="text-accent" stopColor="currentColor" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {gridlines.map((gridline) => (
+          <g key={gridline.value}>
+            <line
+              x1={PADDING.left}
+              x2={WIDTH - PADDING.right}
+              y1={gridline.y}
+              y2={gridline.y}
+              className="stroke-hairline"
+              strokeWidth={1}
+            />
+            <text
+              x={PADDING.left - 10}
+              y={gridline.y + 4}
+              textAnchor="end"
+              fontSize={12}
+              className="fill-muted tabular-nums"
+            >
+              {formatTick(gridline.value)}
+            </text>
+          </g>
+        ))}
+
+        {area ? <path d={area} fill={`url(#${fillId})`} /> : null}
+        {line ? (
+          <path
+            d={line}
+            fill="none"
+            className="stroke-accent"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ) : null}
+
+        {endpoint ? (
+          <>
+            <line
+              x1={endpoint.x}
+              x2={endpoint.x}
+              y1={endpoint.y}
+              y2={floor}
+              className="stroke-accent"
+              strokeWidth={1}
+              strokeDasharray="2 3"
+              opacity={0.5}
+            />
+            <circle cx={endpoint.x} cy={endpoint.y} r={7} className="fill-accent" opacity={0.2} />
+            <circle cx={endpoint.x} cy={endpoint.y} r={3.5} className="fill-accent" />
+          </>
+        ) : null}
+
+        {points.length > 0 ? (
+          <>
+            <text
+              x={PADDING.left}
+              y={HEIGHT - 6}
+              fontSize={12}
+              className="fill-muted"
+              textAnchor="start"
+            >
+              {formatX(points[0].datum.x)}
+            </text>
+            {points.length > 1 ? (
+              <text
+                x={WIDTH - PADDING.right}
+                y={HEIGHT - 6}
+                fontSize={12}
+                className="fill-muted"
+                textAnchor="end"
+              >
+                {formatX(endpoint!.datum.x)}
+              </text>
+            ) : null}
+          </>
+        ) : null}
+      </svg>
+
+      {/* The chart's text alternative — and what the page-level test reads. */}
+      <table className="sr-only">
+        <caption>{caption}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col">{valueLabel}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((datum) => (
+            <tr key={datum.x}>
+              <th scope="row">{formatX(datum.x)}</th>
+              <td>{formatValue(datum.y)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </figure>
+  );
+}
