@@ -8,6 +8,14 @@ A single-user personal platform (TypeScript/Next.js on Vercel, Supabase backend)
 A self-contained feature area (e.g. Financials) living under `apps/web/app/(modules)/<name>/`, registered in a central module registry, and owning its own prefix-namespaced Supabase tables (`<module>_<entity>`).
 _Avoid_: Vertical (used loosely in planning discussions, but "module" is the concrete code/schema unit), plugin, feature.
 
+**Module registry**:
+The list in `apps/web/lib/modules.ts` that declares every module — its label, icon, route, and whether it's built yet. It governs enablement, not just routing: a module with `status: "soon"` still appears in the shell, dimmed and inert. Registering a module means adding one entry here.
+_Avoid_: Nav config, routes — the registry is the source of truth for what modules exist, and navigation is only one thing it drives.
+
+**Shell**:
+The persistent chrome every module renders inside: the left sidebar (module list plus account chip) and the crumb row (`<Module> / <page>` plus a sync-status chip). The shell owns exactly those two things and never reaches into module content. Its visual identity is "Console" — dense, dark-first, hairline borders, tabular numerals, one accent color.
+_Avoid_: Layout (ambiguous with Next.js's `layout.tsx` files, of which modules have their own), chrome, frame.
+
 **Authorized user**:
 The single Google account permitted to use the app. Enforced in two places: a middleware/layout check at the app layer, and the `is_authorized()` Postgres function as an RLS backstop at the database layer.
 _Avoid_: Owner, admin — this app has no multi-tenant or role concept, there is exactly one authorized user.
