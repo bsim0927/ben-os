@@ -162,8 +162,10 @@ leak must not also be a bank leak.
 
 ### The scheduled sync
 
-`apps/web/vercel.json` runs `/api/cron/financials-sync` **once a day, at 11:37 UTC**. The odd minute
-is what Bridge asks for, to keep clients off the top of the hour.
+`apps/web/vercel.json` runs `/api/cron/financials-sync` **once a day, in the 11:00 UTC hour**. The
+expression says `37 11 * * *`, but on Hobby that minute is advisory: Vercel invokes Hobby cron at any
+point within the specified hour to spread load, so expect it anywhere from 11:00 to 11:59. That
+happens to satisfy Bridge's ask to stay off the top of the hour without any help from us.
 
 Daily rather than hourly for two reasons. The binding one is that **Vercel's Hobby plan permits only
 daily cron**, and rejects a more frequent expression at deploy time — this is a build error, not a
@@ -210,6 +212,19 @@ conflict do update` list, so a poll can't undo a categorization or reopen a clos
 > Vercel's Hobby plan allows at most **two** cron jobs, each running **at most once a day**. A
 > sub-daily expression fails the deploy outright with "This cron expression would run more than once
 > per day" — so `vercel.json` is not a free place to raise the cadence.
+
+To trigger a sync by hand, call the route with the secret — but use the **production domain**, not a
+generated deployment URL:
+
+```sh
+curl -i -H "Authorization: Bearer $CRON_SECRET" https://<production-domain>/api/cron/financials-sync
+```
+
+Vercel's Standard Protection covers generated deployment URLs (`<project>-<hash>-<scope>.vercel.app`)
+even on Hobby, and answers them with a 307 to a Vercel SSO login — so a curl there returns a redirect
+and never reaches the route. The production domain is exempt on Hobby, which is also why the
+scheduled invocation is unaffected: Vercel cron runs against production. Worth knowing that cron
+**does not follow redirects**, so a protected endpoint would fail silently rather than retry.
 
 ### Testing the sync
 
