@@ -64,15 +64,25 @@ The hosted project already exists: ref **`fcqoliweobjhpgqfgxao`** (`us-east-2`),
 > land — treat everything currently in `public` as disposable. There is no data worth preserving,
 > which is exactly why [#20](https://github.com/bsim0927/ben-os/issues/20) specifies a redesign from
 > scratch rather than a migration path.
+>
+> `supabase/migrations/20260802040000_wipe_pre_adr_schema.sql` performs that wipe. It is idempotent,
+> and it also prunes the migration-history rows left behind by the earlier design, so apply it before
+> writing any `financials_*` migration.
 
 Remaining setup — dashboard settings that can't live in this repo:
 
 1. Create a Google OAuth client (Google Cloud Console → Credentials), with
    `https://fcqoliweobjhpgqfgxao.supabase.co/auth/v1/callback` as an authorized redirect URI.
 2. In the Supabase dashboard, enable **Google** under Authentication → Providers and paste the
-   client ID and secret. Leave email/password sign-up disabled — it would let someone register the
+   client ID and secret. Disable the **Email** provider outright — it would let someone register the
    allowed address directly and walk past the whole restriction.
-3. Set Site URL and add `<deployment>/auth/callback` to the redirect allow-list.
+   Then close registration under **User Signups → "Allow new users to sign up"**, but only _after_
+   signing in once: against an empty `auth.users`, the first Google sign-in is a signup, so closing
+   it first makes GoTrue reject the sign-in with "Signups not allowed for this instance" and the app
+   shows nothing but `/login?error=signin_failed`.
+3. Set Site URL and add `<deployment>/auth/callback` to the redirect allow-list. Preview deployments
+   need a wildcard — Vercel varies the segment _after_ the project name, so the pattern is
+   `https://<project>-*-<scope>.vercel.app/auth/callback`.
 4. Apply the migrations: `supabase db push`.
 5. Copy `apps/web/.env.example` to `apps/web/.env.local` and fill in the project URL and anon key.
 6. On any deployed environment, set `NEXT_PUBLIC_SITE_URL` to that deployment's public origin. The

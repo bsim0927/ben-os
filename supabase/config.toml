@@ -2,24 +2,49 @@
 #
 # The hosted project is configured through the dashboard; this file is the
 # local mirror of it, and the record of what those settings are meant to be.
+#
+# Hosted project: ref `fcqoliweobjhpgqfgxao` (us-east-2). Where a value below
+# necessarily differs between local and hosted — `site_url` is the only one —
+# the hosted value is recorded in a comment beside it.
 
 project_id = "ben-os"
 
 [auth]
 enabled = true
+# Local only. The hosted project's Site URL is
+# https://ben-os-web-bsim0927s-projects.vercel.app — it can't be shared with
+# this one, because `supabase start` has to send local sign-ins back to
+# localhost.
 site_url = "http://localhost:3000"
+# Both environments' callbacks are listed, so this stays a complete record of
+# what the dashboard's redirect allow-list should contain. The wildcard covers
+# Vercel preview deployments, which are named
+# `ben-os-web-<hash>-bsim0927s-projects.vercel.app` — note the varying segment
+# sits *after* the project name, not inside it.
 additional_redirect_urls = [
   "http://localhost:3000/auth/callback",
   "http://127.0.0.1:3000/auth/callback",
+  "https://ben-os-web-bsim0927s-projects.vercel.app/auth/callback",
+  "https://ben-os-web-*-bsim0927s-projects.vercel.app/auth/callback",
 ]
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
+# Closed once the single authorized account exists, so nobody else can register.
+#
+# First run against an empty `auth.users` is the exception, and it is a trap
+# worth knowing: with this false, the *first* Google sign-in is a signup, so
+# GoTrue rejects it with "Signups not allowed for this instance" and the app
+# surfaces only `/login?error=signin_failed`. Flip it true, sign in once to
+# create the account, then flip it back.
+enable_signup = false
 
 # Google is the only way in. Leaving password signup on would let someone
 # register the allowed address directly and walk straight past the restriction
-# that the whole gate is built on.
+# that the whole gate is built on — so the provider is off outright, not merely
+# closed to new signups.
 [auth.email]
+enabled = false
 enable_signup = false
 enable_confirmations = true
 
