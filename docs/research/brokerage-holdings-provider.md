@@ -8,7 +8,7 @@ free, read-only bank/checking balances and transactions, but its `Account` objec
 needs real brokerage holdings for a Fidelity account — per-security quantity, cost basis, and
 market value. That requires a second data provider. Which one, and what does integrating it
 actually look like: auth flow, data shape, sync model, rate limits, cost — for a single-user
-hobby app connecting one or two of *its own* accounts, not a business with customers?
+hobby app connecting one or two of _its own_ accounts, not a business with customers?
 
 ## Findings
 
@@ -40,24 +40,24 @@ Source: [plaid.com/docs/api/products/investments](https://plaid.com/docs/api/pro
 
 `POST /investments/holdings/get` returns `accounts`, `holdings`, `securities`:
 
-*Holding object:*
+_Holding object:_
 
-| Field | Notes |
-|---|---|
-| `account_id` | which Plaid account the holding belongs to |
-| `security_id` | joins to the `securities` array |
-| `institution_price` / `institution_price_as_of` / `institution_price_datetime` | last price the institution reported, and when |
-| `institution_value` | market value of the holding as reported by the institution |
-| `cost_basis` | total cost basis for the holding |
-| `quantity` | units held |
-| `iso_currency_code` / `unofficial_currency_code` | ISO 4217, or institution-specific code |
-| `vested_quantity` / `vested_value` | for equity-comp accounts |
-| `tax_lots` | array of per-lot acquisition data (see below) |
+| Field                                                                          | Notes                                                      |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `account_id`                                                                   | which Plaid account the holding belongs to                 |
+| `security_id`                                                                  | joins to the `securities` array                            |
+| `institution_price` / `institution_price_as_of` / `institution_price_datetime` | last price the institution reported, and when              |
+| `institution_value`                                                            | market value of the holding as reported by the institution |
+| `cost_basis`                                                                   | total cost basis for the holding                           |
+| `quantity`                                                                     | units held                                                 |
+| `iso_currency_code` / `unofficial_currency_code`                               | ISO 4217, or institution-specific code                     |
+| `vested_quantity` / `vested_value`                                             | for equity-comp accounts                                   |
+| `tax_lots`                                                                     | array of per-lot acquisition data (see below)              |
 
-*Tax lot object (per-lot cost basis):* `institution_lot_id`, `original_purchase_datetime`,
+_Tax lot object (per-lot cost basis):_ `institution_lot_id`, `original_purchase_datetime`,
 `quantity`, `purchase_price`, `cost_basis`, `current_value`, `position_type` (long/short).
 
-*Security object:* `security_id`, `isin`, `cusip`, `sedol` (deprecated), `institution_security_id`,
+_Security object:_ `security_id`, `isin`, `cusip`, `sedol` (deprecated), `institution_security_id`,
 `institution_id`, `name`, `ticker_symbol`, `is_cash_equivalent`, `type` (cash / cryptocurrency /
 derivative / equity / etf / fixed income / loan / mutual fund / other), `subtype`, `close_price` /
 `close_price_as_of` / `close_price_datetime`, `iso_currency_code`, `market_identifier_code`
@@ -93,7 +93,7 @@ product, and directs you to sales/"Plaid Billing" for real numbers. What's publi
 - **Sandbox** (fake data) is free and unlimited.
 - **Trial plan** (new as of ~April 15, 2026, for US/Canada teams created on or after that date):
   free, real production data, up to **10 Production Items**, access to most OAuth institutions,
-  *before* going through full Production approval. This directly targets the "I just want to
+  _before_ going through full Production approval. This directly targets the "I just want to
   connect my own account" case that didn't exist cleanly before.
 - **Limited Production** (older teams, pre-April-2026): free but capped, meant as a bridge to
   paid Production.
@@ -109,9 +109,9 @@ Plaid for free?" and "How are Sandbox, Production, Trial plan, and Limited Produ
 
 **The disqualifying fact: Plaid does not currently support Fidelity.** Fidelity built its own
 OAuth-based data-sharing platform, **Fidelity Access** (announced ~2018, running through the
-**Akoya** data-sharing hub that Fidelity spun out in 2020), and made it the *exclusive* channel
+**Akoya** data-sharing hub that Fidelity spun out in 2020), and made it the _exclusive_ channel
 for third-party data sharing on Fidelity accounts. Multiple independent sources (Infinite Kind /
-Moneydance support desk, October 2023: *"Unfortunately, Fidelity no longer support[s] Plaid"* —
+Moneydance support desk, October 2023: _"Unfortunately, Fidelity no longer support[s] Plaid"_ —
 users attempting to link get "Connectivity not supported. Plaid does not support connections
 between Fidelity and Moneydance") confirm Plaid and Fidelity's direct relationship was cut when
 Fidelity moved to Akoya-only distribution, because a number of aggregators (reportedly including
@@ -128,7 +128,7 @@ Sources: [Infinite Kind support thread, Oct 2023](https://infinitekind.tenderapp
 ### 2. SnapTrade
 
 **What it is.** A brokerage-account-connectivity API positioned for both commercial fintech apps
-*and* individual/personal use — it explicitly ships a "Personal" integration mode distinct from
+_and_ individual/personal use — it explicitly ships a "Personal" integration mode distinct from
 "Commercial," aimed at exactly this app's situation (the account owner and the API consumer are
 the same person). Source:
 [docs.snaptrade.com](https://docs.snaptrade.com/),
@@ -142,7 +142,7 @@ Agreement** → select accounts to share. The explicit mention of the "Fidelity 
 Agreement" confirms SnapTrade is connecting through Fidelity's own official Fidelity
 Access/Akoya-style data-sharing channel, as an approved recipient — this is the same official
 mechanism Fidelity uses for all third-party sharing, just with a partner (SnapTrade) that
-actually has a signed agreement, unlike Plaid. Trading is *not* available through this Fidelity
+actually has a signed agreement, unlike Plaid. Trading is _not_ available through this Fidelity
 connection (data/read access only), which is fine for this app's holdings-only use case.
 SnapTrade's FAQ separately notes that a short list of brokers — **Alpaca, Tradier, Tradestation,
 Questrade** (and Fidelity is mentioned as needing "special setup" in the same context) — require
@@ -153,8 +153,8 @@ gate on the developer.
 
 1. One-time setup: create a **Personal `clientId` + `consumerKey`** pair in the SnapTrade
    dashboard — every account gets exactly one free Personal key pair, no approval workflow.
-2. No `registerUser`/`userSecret` step in Personal mode — the docs are explicit: *"Personal
-   customers... [use] a Personal client ID and consumer key,"* requests are signed with the
+2. No `registerUser`/`userSecret` step in Personal mode — the docs are explicit: _"Personal
+   customers... [use] a Personal client ID and consumer key,"_ requests are signed with the
    `consumerKey` directly, and you **omit `userId`/`userSecret`** entirely; SnapTrade resolves
    identity from the API key itself.
 3. Backend calls the login/"Generate Connection Portal URL" endpoint, gets back a `redirectURI`.
@@ -177,17 +177,17 @@ Source: [docs.snaptrade.com/docs/personal-vs-commercial](https://docs.snaptrade.
 
 `GET` "List account holdings" returns nested `Account`, `Balance`, and `Position[]` objects:
 
-*Account:* `id` (SnapTrade UUID), `brokerage_authorization` (connection UUID),
+_Account:_ `id` (SnapTrade UUID), `brokerage_authorization` (connection UUID),
 `name`, `number` (may be masked), `institution_account_id` (stable ID from the brokerage),
 `institution_name`, `created_date`, `funding_date`, `opening_date`, `sync_status` (see below),
 `balance` (total account market value), `status` (`open` / `closed` / `archived` / null),
 `raw_type`, `account_category` (`INVESTMENT` / `DEPOSIT` / `LOC`), `is_paper` (simulated trading
 account flag).
 
-*Balance:* `currency` (`{id, code, name}` — ISO 4217 `code`), `cash`, `buying_power` (margin
+_Balance:_ `currency` (`{id, code, name}` — ISO 4217 `code`), `cash`, `buying_power` (margin
 accounts).
 
-*Position:* `symbol` (nested security/instrument object — ticker, name, type, exchange, etc.),
+_Position:_ `symbol` (nested security/instrument object — ticker, name, type, exchange, etc.),
 `units` (share count; negative = short; fractional allowed), `price` (last known market price),
 `open_pnl`, `average_purchase_price` (cost basis per share — **note: per-share average, not a
 lot-level breakdown by default**), `currency`, `cash_equivalent` (bool), and an optional
@@ -291,7 +291,7 @@ For a future `financials_holding` (or `financials_position`) table:
   structurally the same: an account → security → position join, optionally with per-lot detail):
   - `id` (uuid pk)
   - `account_id` → `financials_account.id` (fk; only meaningful where `financials_account.kind =
-    'investment'`)
+'investment'`)
   - `provider_holding_id` or reuse the existing `provider_account_id` pattern **plus** a
     provider-side security identifier (SnapTrade's `symbol.id` / Plaid's `security_id`) — holdings
     themselves generally aren't independently ID'd by the provider the way transactions are, so
@@ -361,6 +361,7 @@ shouldn't be the primary design given the schema already anticipates a real seco
 ## Sources
 
 Primary (official):
+
 - [plaid.com/docs/investments](https://plaid.com/docs/investments/) — Investments product overview
 - [plaid.com/docs/api/products/investments](https://plaid.com/docs/api/products/investments/) — endpoint/field reference, webhooks
 - [plaid.com/pricing](https://plaid.com/pricing/) — pricing model structure
@@ -387,6 +388,7 @@ Primary (official):
 - [jpmorganchase.com — JPMorganChase and Plaid renewed data access agreement, Sept 2025](https://www.jpmorganchase.com/newsroom/press-releases/2025/jpmc-plaid-renewed-data-access-agreement)
 
 Secondary (used only to establish the Plaid–Fidelity disconnection timeline, cross-checked against
-official Fidelity/Akoya statements above on *why* it happened):
+official Fidelity/Akoya statements above on _why_ it happened):
+
 - [Infinite Kind (Moneydance) support thread, Oct 2023 — "Fidelity and Plaid"](https://infinitekind.tenderapp.com/discussions/online-banking/1247360-fidelity-and-plaid)
 - [Infinite Kind support thread — "Fidelity Net Benefits and Investments not working with OFX or Plaid"](https://infinitekind.tenderapp.com/discussions/online-banking/1252236-fidelity-net-benefits-and-investments-not-working-with-ofx-or-plaid)

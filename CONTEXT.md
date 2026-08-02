@@ -36,6 +36,13 @@ A single financial account (checking, savings, credit card, brokerage, etc.) exp
 A point-in-time record of an account's balance as reported by a provider poll — the basis for net worth history, distinct from the account's current balance.
 _Avoid_: Balance (ambiguous between "the account's current balance" and "a historical snapshot")
 
+**Poll**:
+One scheduled call to a provider, covering every Connection at once — SimpleFIN answers `GET /accounts` for the whole subscription, not per institution. A poll succeeds or fails _per Connection_, so "the poll failed" is almost always wrong; one bank being broken is the normal case.
+_Avoid_: Sync, when the unit matters — a Sync is the job, a Poll is one run of it.
+
+**Poll window**:
+The date range a poll asks for. Steady state is a 5-day overlap rather than "since last sync", because institutions post transactions late and a cursor would step over them; re-fetching is free because transactions dedupe on `(account_id, provider_transaction_id)`. The first poll against an empty database reaches back 45 days instead — see [ADR 0005](docs/adr/0005-financials-sync-execution-model.md).
+
 **Category**:
 A user-assigned label on a transaction. SimpleFIN provides no native categorization, so this is entirely app-owned.
 _Avoid_: Tag — categories are single-valued per transaction in v1, not a many-valued tagging system.

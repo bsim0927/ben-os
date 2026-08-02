@@ -12,8 +12,8 @@ import {
   errorScope,
   fromEpochSeconds,
   pollWindow,
-  SIMPLEFIN_MAX_WINDOW_DAYS,
   SIMPLEFIN_POLL_OVERLAP_DAYS,
+  SIMPLEFIN_RECOMMENDED_WINDOW_DAYS,
   type PollWindow,
   type SimpleFinAccount,
   type SimpleFinClient,
@@ -66,16 +66,22 @@ export async function syncSimpleFin({
   unitOfWork,
   now = new Date(),
   overlapDays = SIMPLEFIN_POLL_OVERLAP_DAYS,
-  firstPollDays = SIMPLEFIN_MAX_WINDOW_DAYS,
+  firstPollDays = SIMPLEFIN_RECOMMENDED_WINDOW_DAYS,
 }: SyncOptions): Promise<SyncResult> {
   // A 5-day overlap is the right steady-state reach, but it is the wrong first
   // reach: applied to an empty database it would mean the account's history
   // began five days ago, and no later poll would ever go back and find the rest.
-  // The first poll therefore asks for the widest window a single call may cover.
+  // The first poll therefore asks for the widest window Bridge wants to serve.
   //
-  // This is not a backfill — Bridge caps one call at 90 days and institutions
-  // vary in how far they will backfill anyway, so deeper history would need a
-  // separate job walking successive windows against the same daily budget.
+  // 45 days, not the 90 a single call is permitted: a 90-day first poll works,
+  // but Bridge answers it with a `gen.api` warning that the range exceeds its
+  // recommended 45 and "may be capped" later. Sitting inside the recommendation
+  // costs a month and a half of history once, and avoids depending on something
+  // Bridge has said it may stop allowing.
+  //
+  // This is not a backfill either way — institutions vary in how far they will
+  // backfill, so deeper history would need a separate job walking successive
+  // windows against the same daily budget.
   const isFirstPoll = await unitOfWork((query) =>
     createFinancialsStore(query)
       .hasAnyTransactions()

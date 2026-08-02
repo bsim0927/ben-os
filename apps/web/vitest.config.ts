@@ -26,6 +26,12 @@ export default defineConfig({
     // The database tests each drive several polls end to end; the default 5s is
     // tight for the first one, which pays for the pool's initial connection.
     testTimeout: 20_000,
+    // One Postgres serves the whole run, and the database tests reset it between
+    // cases. Run files in parallel and they truncate each other's fixtures
+    // mid-test — which surfaces as a deadlock or a phantom row count, not as
+    // anything that points at parallelism. The whole suite is ~3s; the isolation
+    // is worth more than the concurrency.
+    fileParallelism: false,
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["node_modules/**", ".next/**"],
   },

@@ -155,6 +155,12 @@ implementation, imposes practical limits documented in its developer guide:
   from separate quotas.
 - **`start-date`/`end-date` window is capped at 90 days per request.** To pull a longer history
   you must make multiple sequential `/accounts` calls with different windows.
+  **Corrected in practice (2026-08-02):** 90 is the limit a call may _carry_, but not the range
+  Bridge wants. A 90-day poll succeeds and returns full data, while adding a poll-wide entry to
+  `errlist`: `gen.api — Requested date range exceeds recommended range of 45 days. In the future,
+this may be capped.` That 45-day figure appears nowhere in the developer guide; it was observed
+  on the first live sync. The sync job therefore reaches back 45 days on a cold start, not 90
+  ([ADR 0005](../adr/0005-financials-sync-execution-model.md)).
 - **Recommended polling pattern:** pick a random minute (not top-of-hour) to reduce load-spike
   contention, e.g. "every 6 hours at 17 minutes past the hour."
   Overlap consecutive fetch windows by ~5 days to avoid gaps from late-posting transactions.

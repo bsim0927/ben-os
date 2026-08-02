@@ -65,8 +65,30 @@ The project predates these ADRs and once held an earlier design — a reading in
 finance prototype. That schema has been wiped by
 `supabase/migrations/20260802040000_wipe_pre_adr_schema.sql`, which is why
 [#20](https://github.com/bsim0927/ben-os/issues/20) specifies a redesign from scratch rather than a
-migration path. `public` now holds exactly one object: `is_authorized()`. The Financials tables are
-the first thing built on the clean slate.
+migration path. The Financials tables were the first thing built on the clean slate, so `public` now
+holds `is_authorized()`, `set_updated_at()`, and the five `financials_*` tables.
+
+> [!IMPORTANT]
+> **Those tables hold real data.** A linked SimpleFIN account has been syncing Chase and Fidelity
+> since 2026-08-02. Destructive SQL now costs transaction history that cannot be re-fetched, because
+> Bridge only serves a bounded recent window — prefer additive migrations.
+
+`20260802205533_financials_destructive_guards.sql` makes that harder to do by accident: `truncate` on
+a `financials_*` table, `drop` of one, and any single `delete` of more than 100 rows each raise. The
+sync's own pruning removes a handful of rows and is unaffected.
+
+It is a tripwire, not a permission boundary — `postgres` owns these tables and an owner can disable a
+trigger in one statement. What it removes is the _accidental_ version of each. Deliberate
+maintenance opts in for one transaction at a time:
+
+```sql
+begin;
+set local ben_os.allow_bulk_delete = 'on';
+-- the destructive statement
+commit;
+```
+
+`set local` means the guard is back on for the next statement and can't be left off by mistake.
 
 Remaining setup — dashboard settings that can't live in this repo:
 
@@ -131,8 +153,10 @@ Modules that aren't built yet stay in the registry with `status: "soon"`, and re
 
 The first module with real data behind it. Its tables (`financials_*`) follow
 [ADR 0002](docs/adr/0002-financials-schema.md) as amended by
-[ADR 0003](docs/adr/0003-financials-multi-provider-and-account-kind.md); the protocol notes behind
-the sync are in [`docs/research/simplefin-bridge-api.md`](docs/research/simplefin-bridge-api.md).
+[ADR 0003](docs/adr/0003-financials-multi-provider-and-account-kind.md), and how the sync job runs
+is [ADR 0005](docs/adr/0005-financials-sync-execution-model.md) — RLS, transaction granularity,
+poll windows, and what it refuses to overwrite. The protocol notes behind it are in
+[`docs/research/simplefin-bridge-api.md`](docs/research/simplefin-bridge-api.md).
 
 `/financials` today is a **raw-data view** — accounts, balance snapshots and transactions as plain
 tables. It exists to make sync correctness visible, and the designed surfaces (net worth, the flow
@@ -178,10 +202,17 @@ institutions post transactions late — the overlap is free, since
 the window only has to exceed the gap between polls plus however late an institution posts.
 
 The **first** poll is the exception: against an empty database a 5-day window would mean history
-began five days ago, and no later poll would go back for the rest, so the first one asks for the
-full 90 days a single call may cover. That is a cold start, not a backfill — deeper history would
-need a separate job walking successive 90-day windows against the same daily budget, and how far
-back an institution will go varies anyway.
+began five days ago, and no later poll would go back for the rest, so the first one reaches back
+**45 days**.
+
+45 rather than the 90 a single call is permitted, because a 90-day poll works but comes back
+carrying `gen.api: Requested date range exceeds recommended range of 45 days. In the future, this
+may be capped.` — observed on the first live sync, and documented nowhere. Sitting inside the
+recommendation costs a month and a half of history once, and avoids depending on something Bridge
+has said it may stop allowing.
+
+Either way this is a cold start, not a backfill — deeper history would need a separate job walking
+successive windows against the same daily budget, and how far back an institution will go varies.
 
 Three behaviours worth knowing before reading the code:
 
@@ -270,3 +301,29 @@ the last three are needed for the Financials sync, and are **secrets** — none 
 
 `vercel.json` lives in `apps/web/` rather than the repo root, because Vercel reads it relative to the
 Root Directory above.
+
+### Things that cost an afternoon the first time
+
+All of these were hit while bringing the Financials sync online, and none of them fail in a way that
+points at the cause.
+
+- **Vercel reads environment variables at build time.** Adding or editing one does nothing to a
+  deployment that is already running — it is not restarted and does not re-read. Every variable
+  change needs a redeploy, and a variable added _after_ a merge is simply absent from the build that
+  merge produced. This is behind most "but I set it" confusion.
+- **The Supabase integration's `POSTGRES_*` and `SUPABASE_*` variables are not used by this app.**
+  It reads exactly six variables, all listed above. The integration's dozen-odd others are inert
+  here — though `SUPABASE_SERVICE_ROLE_KEY` among them bypasses RLS, so they are worth knowing about.
+- **`sslmode=require` does not mean what libpq means by it.** `pg` treats `require`, `prefer` and
+  `verify-ca` as aliases for `verify-full`, so it verifies Supabase's certificate against Node's
+  trust store and fails. `no-verify` is the one that yields `{ rejectUnauthorized: false }`.
+- **`vercel env pull` will not give you values.** It writes the literal string `[SENSITIVE]` in place
+  of every secret, and there is no flag to override it. Read a value from the dashboard's
+  **Edit** dialog instead, or overwrite it blind with `vercel env rm` + `vercel env add`.
+- **Deployment Protection covers generated deployment URLs**, so a `curl` to
+  `<project>-<hash>-<scope>.vercel.app` gets a 307 to a Vercel SSO login and — with `-s` — prints
+  nothing at all. Use the production domain, which Standard Protection leaves public on Hobby.
+- **A Supabase database password is not any of the API keys**, and cannot be retrieved after project
+  creation. If it is lost, reset it at **Database → Settings**. When pasting the connection string,
+  delete the `[` `]` around the placeholder along with the placeholder text — leaving the brackets
+  makes them part of the password, and the failure is an authentication error, not a parse error.
