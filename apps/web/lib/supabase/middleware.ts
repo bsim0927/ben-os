@@ -5,8 +5,15 @@ import { isAuthorizedEmail, LOGIN_PATH, loginRedirectFor } from "@/lib/auth";
 
 import { supabaseEnv } from "./env";
 
-/** Routes that must stay reachable before we know who the visitor is. */
-const PUBLIC_PREFIXES = ["/auth"];
+/**
+ * Routes that must stay reachable before we know who the visitor is.
+ *
+ * `/auth` is the sign-in round trip itself — gating it would lock the door from
+ * the inside. `/api/cron` is reached by a scheduler that has no Google session
+ * and never can; those routes carry their own bearer-secret check instead
+ * (`lib/cron.ts`), so skipping the session gate here does not leave them open.
+ */
+const PUBLIC_PREFIXES = ["/auth", "/api/cron"];
 
 /**
  * The app-layer gate, run ahead of every render.

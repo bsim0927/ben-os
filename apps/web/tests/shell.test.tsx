@@ -63,13 +63,26 @@ describe("the shell, for the authorized account", () => {
 
     const nav = within(screen.getByRole("navigation"));
 
-    // Nothing is built yet, so nothing is a link and everything is tagged.
-    expect(nav.queryAllByRole("link")).toHaveLength(0);
-    expect(nav.getAllByText("Soon")).toHaveLength(4);
+    // Financials is built and so is the one link; the rest stay visible, tagged
+    // and inert, because the sidebar shows what the app is for.
+    expect(nav.getAllByRole("link")).toHaveLength(1);
+    expect(nav.getAllByText("Soon")).toHaveLength(3);
 
-    for (const label of ["Financials", "Email", "Calendar", "Notes"]) {
+    for (const label of ["Email", "Calendar", "Notes"]) {
       expect(nav.getByRole("listitem", { name: label })).toHaveAttribute("data-status", "soon");
     }
+  });
+
+  it("makes a built module reachable from the sidebar", async () => {
+    await renderShell();
+
+    const nav = within(screen.getByRole("navigation"));
+
+    expect(nav.getByRole("listitem", { name: "Financials" })).toHaveAttribute(
+      "data-status",
+      "live",
+    );
+    expect(nav.getByRole("link", { name: /Financials/ })).toHaveAttribute("href", "/financials");
   });
 
   it("shows the crumb row for the page being viewed", async () => {

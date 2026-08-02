@@ -30,7 +30,7 @@ export const modules: readonly ModuleEntry[] = [
     id: "financials",
     label: "Financials",
     href: "/financials",
-    status: "soon",
+    status: "live",
     iconPaths: ["M3 17l5-6 4 4 8-10", "M14 5h6v6"],
   },
   {

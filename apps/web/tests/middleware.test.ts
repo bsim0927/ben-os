@@ -92,4 +92,22 @@ describe("updateSession", () => {
 
     expect(response.headers.get("location")).toBeNull();
   });
+
+  it("lets a cron route through unauthenticated, since it gates on a secret instead", async () => {
+    // A scheduler has no Google session and never will. Redirecting it to
+    // /login would turn every scheduled sync into a silent no-op.
+    signedInAs(null);
+
+    const response = await updateSession(request("/api/cron/financials-sync"));
+
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("does not extend that exemption to look-alike paths", async () => {
+    signedInAs(null);
+
+    const response = await updateSession(request("/api/cron-secrets"));
+
+    expect(response.headers.get("location")).toBe("https://ben-os.test/login");
+  });
 });

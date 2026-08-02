@@ -17,13 +17,15 @@ describe("module registry", () => {
   });
 
   it("marks the modules that are not built yet as soon, not hidden", () => {
-    // Nothing is built yet at this point — Financials lands in a later ticket.
     expect(modules.filter((m) => m.status === "soon").map((m) => m.id)).toEqual([
-      "financials",
       "email",
       "calendar",
       "notes",
     ]);
+  });
+
+  it("has Financials live — it is the first module with real data behind it", () => {
+    expect(modules.find((m) => m.id === "financials")?.status).toBe("live");
   });
 
   it("has one entry per href", () => {
