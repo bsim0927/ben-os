@@ -20,10 +20,9 @@ import { messageFor } from "@/lib/errors";
 import type { UnitOfWork } from "./db";
 import {
   holdingsAsOf,
-  positionSymbol,
   securityTypeFor,
   type SnapTradeClient,
-  type SnapTradeHoldings,
+  type SnapTradePositions,
 } from "./snaptrade";
 import { createFinancialsStore, type FinancialsStore, type HoldingInput } from "./store";
 
@@ -36,7 +35,7 @@ export type AccountHoldingsResult = {
   asOf: string | null;
   /**
    * Where `asOf` came from. `run` means SnapTrade reported no usable
-   * `last_successful_sync`, so these rows are keyed on this app's clock and a
+   * `data_freshness.as_of`, so these rows are keyed on this app's clock and a
    * retry will write them again — surfaced here because that is otherwise a
    * silent loss of idempotency.
    */
@@ -96,8 +95,8 @@ export async function syncSnapTradeHoldings({
       // Fetched outside the transaction on purpose: a slow brokerage would
       // otherwise hold a database connection open for the length of an HTTP
       // round trip, and there is nothing to roll back if the fetch fails.
-      const holdings = await client.fetchHoldings(snapTradeAccountId);
-      const asOf = holdingsAsOf(holdings.account, now);
+      const holdings = await client.fetchPositions(snapTradeAccountId);
+      const asOf = holdingsAsOf(holdings.asOf, now);
 
       const counts = await unitOfWork((query) =>
         writeHoldings({ store: createFinancialsStore(query), accountId, holdings, asOf: asOf.at }),
@@ -140,30 +139,26 @@ async function writeHoldings({
 }: {
   store: FinancialsStore;
   accountId: string;
-  holdings: SnapTradeHoldings;
+  holdings: SnapTradePositions;
   asOf: Date;
 }): Promise<{ positions: number; holdingsInserted: number; skipped: number }> {
   const inputs: HoldingInput[] = [];
   let skipped = 0;
 
   for (const position of holdings.positions) {
-    const symbol = positionSymbol(position);
-    const ticker = symbol?.symbol?.trim();
-    // `units` alone, deliberately. `fractional_units` sits beside it in the
-    // protocol and its meaning is not documented anywhere this app can check —
-    // an alternative total, or the fractional part of `units`. Under the second
-    // reading, falling back to it would silently store 0.5 shares as the whole
-    // position. `units` is documented as the share count and as allowing
-    // fractions, so it is the only field trusted here.
-    const quantity = decimal(position.units);
+    const instrument = position.instrument;
+    const ticker = instrument?.symbol?.trim();
+    // Already a decimal string on the wire, so it reaches `numeric` without
+    // passing through a double — a fractional share count is exact end to end.
+    // Validated rather than trusted: `quantity` is `not null`, and a value the
+    // column would reject must be skipped here, not discovered mid-insert where
+    // it would fail the whole account's batch.
+    const quantity = numericLiteral(position.units);
 
     // A position with no ticker cannot be keyed to a security, and one with no
-    // usable quantity is not a position. Checked through the same conversion
-    // that produces the column value, so nothing can pass this guard and still
-    // convert to null — `quantity` is `not null`, and a null here would fail
-    // the whole account's insert rather than skipping one row. Both are counted
-    // rather than swallowed, so a provider change that starts dropping either
-    // shows up in the sync report instead of as holdings quietly going missing.
+    // usable quantity is not a position. Both are counted rather than swallowed,
+    // so a provider change that starts dropping either shows up in the sync
+    // report instead of as holdings quietly going missing.
     if (!ticker || quantity === null) {
       skipped += 1;
       continue;
@@ -171,15 +166,16 @@ async function writeHoldings({
 
     const securityId = await store.upsertSecurity({
       symbol: ticker,
-      name: symbol?.description?.trim() || null,
+      name: instrument?.description?.trim() || null,
       securityType: securityTypeFor(position),
       extra: {
-        // Kept even when the code mapped cleanly: `security_type` is this app's
+        // Kept even when the kind mapped cleanly: `security_type` is this app's
         // vocabulary, and without the provider's own word for it a mapping
         // mistake is unrecoverable from the row.
-        snaptrade_type_code: symbol?.type?.code ?? null,
-        snaptrade_symbol_id: symbol?.id ?? null,
-        raw_symbol: symbol?.raw_symbol ?? null,
+        snaptrade_kind: instrument?.kind ?? null,
+        snaptrade_instrument_id: instrument?.id ?? null,
+        raw_symbol: instrument?.raw_symbol ?? null,
+        exchange: instrument?.exchange ?? null,
       },
     });
 
@@ -187,18 +183,15 @@ async function writeHoldings({
       accountId,
       securityId,
       quantity,
-      averageCostBasis: decimal(position.average_purchase_price),
-      marketPrice: decimal(position.price),
-      currency: position.currency?.code ?? symbol?.currency?.code ?? null,
-      // An absent lot breakdown is absent, not empty: SnapTrade exposes lot
-      // detail per brokerage and per security, so `[]` would claim the
-      // brokerage said "no lots" when it said nothing at all.
+      averageCostBasis: numericLiteral(position.cost_basis),
+      marketPrice: numericLiteral(position.price),
+      currency: position.currency ?? instrument?.currency ?? null,
+      // An absent lot breakdown is absent, not empty. SnapTrade gates lot detail
+      // behind its paid plans, so on Personal this is null essentially always —
+      // `[]` would claim the brokerage said "no lots" when it said nothing.
       taxLots:
         Array.isArray(position.tax_lots) && position.tax_lots.length > 0 ? position.tax_lots : null,
-      extra: {
-        open_pnl: position.open_pnl ?? null,
-        cash_equivalent: position.cash_equivalent ?? null,
-      },
+      extra: { cash_equivalent: position.cash_equivalent ?? null },
       asOf,
     });
   }
@@ -211,15 +204,22 @@ async function writeHoldings({
 }
 
 /**
- * A `numeric` literal for a number SnapTrade sent as JSON.
+ * A `numeric` literal, or null for anything Postgres would reject.
  *
- * These arrive as JSON numbers, so they are already through a double by the time
- * this app sees them — `numeric` cannot recover precision the wire format never
- * carried. What it does buy is that nothing *further* is lost: no summing in
- * floating point, and no `0.1 + 0.2` in a portfolio total.
+ * The v2 endpoints send these as decimal strings, so the honest job here is
+ * validation rather than conversion — passing the string straight through is
+ * what keeps the precision. Guarding on `Number` would be wrong in the other
+ * direction: it is a *check*, not the value, because a string beyond double
+ * range still round-trips into `numeric` perfectly well.
  */
-function decimal(value: number | null | undefined): string | null {
-  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+function numericLiteral(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
 
-  return String(value);
+  const trimmed = value.trim();
+
+  // Deliberately strict: an optional sign, digits with at most one decimal
+  // point, and an optional exponent. Anything else — empty, `NaN`, a currency
+  // symbol, a thousands separator — is a value this column cannot hold, and
+  // reaching the insert with it costs the whole account its sync.
+  return /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/.test(trimmed) ? trimmed : null;
 }

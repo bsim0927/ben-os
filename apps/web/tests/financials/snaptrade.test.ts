@@ -13,8 +13,9 @@ import {
 } from "@/lib/financials/snaptrade";
 
 import {
-  account,
+  AS_OF,
   holdings,
+  instrumentOfKind,
   position,
   stubJson,
   stubStatus,
@@ -149,25 +150,53 @@ describe("createSnapTradeClient", () => {
     ).rejects.toThrow(/no redirect/i);
   });
 
-  it("reads an account's holdings, tolerating a missing positions array", async () => {
-    const fetch = stubJson([{ account: account() }]);
+  it("reads positions from /positions/all — the endpoint that replaced /holdings", async () => {
+    // SnapTrade answers the retired `/accounts/{id}/holdings` with 410 Gone for
+    // accounts created after April 2026, which is how this was found.
+    const fetch = stubJson([holdings()]);
 
-    const result = await createSnapTradeClient(TEST_CREDENTIALS, { fetch }).fetchHoldings(
+    const result = await createSnapTradeClient(TEST_CREDENTIALS, { fetch }).fetchPositions(
       "st-acct-1",
     );
 
-    expect(new URL(fetch.calls[0].url).pathname).toBe("/api/v1/accounts/st-acct-1/holdings");
+    expect(new URL(fetch.calls[0].url).pathname).toBe("/api/v1/accounts/st-acct-1/positions/all");
+    expect(result.positions).toHaveLength(1);
+    expect(result.asOf).toEqual(new Date(AS_OF));
+  });
+
+  it("takes as-of from the response's own data_freshness", async () => {
+    const fetch = stubJson([holdings({ data_freshness: { as_of: "2026-08-01T05:00:00Z" } })]);
+
+    const result = await createSnapTradeClient(TEST_CREDENTIALS, { fetch }).fetchPositions("a");
+
+    expect(result.asOf).toEqual(new Date("2026-08-01T05:00:00Z"));
+  });
+
+  it("reports a missing or unparseable as-of as null rather than inventing one", async () => {
+    for (const freshness of [undefined, { as_of: "not a date" }]) {
+      const fetch = stubJson([holdings({ data_freshness: freshness })]);
+      const result = await createSnapTradeClient(TEST_CREDENTIALS, { fetch }).fetchPositions("a");
+
+      expect(result.asOf).toBeNull();
+    }
+  });
+
+  it("tolerates a missing results array — an empty account is the same shape", async () => {
+    const fetch = stubJson([{ data_freshness: { as_of: AS_OF } }]);
+
+    const result = await createSnapTradeClient(TEST_CREDENTIALS, { fetch }).fetchPositions("a");
+
     expect(result.positions).toEqual([]);
   });
 
   it("percent-encodes an account id into the path it signs", async () => {
     const fetch = stubJson([holdings()]);
 
-    await createSnapTradeClient(TEST_CREDENTIALS, { fetch }).fetchHoldings("a b/c");
+    await createSnapTradeClient(TEST_CREDENTIALS, { fetch }).fetchPositions("a b/c");
 
     const url = new URL(fetch.calls[0].url);
 
-    expect(url.pathname).toBe("/api/v1/accounts/a%20b%2Fc/holdings");
+    expect(url.pathname).toBe("/api/v1/accounts/a%20b%2Fc/positions/all");
     expect(fetch.calls[0].headers.Signature).toBe(
       signRequest(
         { content: null, path: url.pathname, query: url.search.slice(1) },
@@ -196,77 +225,64 @@ describe("createSnapTradeClient", () => {
 describe("holdingsAsOf", () => {
   const fallback = new Date("2026-08-02T09:00:00Z");
 
-  it("uses the provider's last successful holdings sync", () => {
-    expect(
-      holdingsAsOf(
-        account({ sync_status: { holdings: { last_successful_sync: "2026-08-02T06:30:00Z" } } }),
-        fallback,
-      ),
-    ).toEqual({ at: new Date("2026-08-02T06:30:00Z"), source: "provider" });
+  it("uses the provider's reading time when there is one", () => {
+    expect(holdingsAsOf(new Date(AS_OF), fallback)).toEqual({
+      at: new Date(AS_OF),
+      source: "provider",
+    });
   });
 
   it("falls back to the run's own instant when the provider reports none", () => {
     // Losing the idempotency a provider timestamp buys is worth less than losing
     // the reading: without an `as_of` there is no row at all.
-    expect(holdingsAsOf(account({ sync_status: {} }), fallback)).toEqual({
-      at: fallback,
-      source: "run",
-    });
-    expect(holdingsAsOf(account({ sync_status: undefined }), fallback)).toEqual({
-      at: fallback,
-      source: "run",
-    });
-  });
-
-  it("falls back rather than trusting a timestamp it cannot parse", () => {
-    expect(
-      holdingsAsOf(
-        account({ sync_status: { holdings: { last_successful_sync: "not a date" } } }),
-        fallback,
-      ),
-    ).toEqual({ at: fallback, source: "run" });
+    expect(holdingsAsOf(null, fallback)).toEqual({ at: fallback, source: "run" });
+    expect(holdingsAsOf(undefined, fallback)).toEqual({ at: fallback, source: "run" });
   });
 
   it("says which of the two happened, so a silent fallback cannot hide", () => {
-    // The whole reason this returns a source. If SnapTrade renamed the field,
-    // `as_of` would quietly become this app's clock, idempotency would stop
-    // working, and every hand-written fixture here would still pass. Reporting
-    // it puts that in the cron response body instead.
-    expect(holdingsAsOf(account(), fallback).source).toBe("provider");
-    expect(holdingsAsOf(account({ sync_status: {} }), fallback).source).toBe("run");
+    // If SnapTrade renamed `data_freshness.as_of`, `as_of` would quietly become
+    // this app's clock, idempotency would stop working, and every hand-written
+    // fixture here would still pass. Reporting it puts that in the cron body.
+    expect(holdingsAsOf(new Date(AS_OF), fallback).source).toBe("provider");
+    expect(holdingsAsOf(null, fallback).source).toBe("run");
   });
 });
 
 describe("securityTypeFor", () => {
-  it("maps the codes this app has confirmed", () => {
-    expect(securityTypeFor(position({ symbol: symbolWithType("cs") }))).toBe("equity");
-    expect(securityTypeFor(position({ symbol: symbolWithType("et") }))).toBe("etf");
-    expect(securityTypeFor(position({ symbol: symbolWithType("crypto") }))).toBe("crypto");
+  it("maps every instrument kind the protocol documents", () => {
+    // `kind` is a documented discriminator, unlike the two-letter `type.code`
+    // the retired endpoints carried — so this mapping is guaranteed by the API
+    // rather than inferred by this app.
+    const expected: Record<string, string> = {
+      stock: "equity",
+      adr: "equity",
+      etf: "etf",
+      mutualfund: "mutual_fund",
+      cef: "mutual_fund",
+      crypto: "crypto",
+      option: "option",
+      future: "other",
+      cfd: "other",
+      other: "other",
+    };
+
+    for (const [kind, securityType] of Object.entries(expected)) {
+      expect(securityTypeFor(position({ instrument: instrumentOfKind(kind) }))).toBe(securityType);
+    }
   });
 
-  it("calls a cash-equivalent position cash, whatever its code says", () => {
-    expect(securityTypeFor(position({ cash_equivalent: true, symbol: symbolWithType("cs") }))).toBe(
-      "cash",
-    );
+  it("calls a cash-equivalent position cash, whatever its kind says", () => {
+    // SnapTrade sets this on money-market funds also counted in cash balance;
+    // filing swept cash as a mutual fund would bucket it with real investments.
+    expect(
+      securityTypeFor(
+        position({ cash_equivalent: true, instrument: instrumentOfKind("mutualfund") }),
+      ),
+    ).toBe("cash");
   });
 
-  it("falls back to 'other' for a code it does not recognise", () => {
-    // Deliberately not a guess: SnapTrade publishes no exhaustive code list, so
-    // an unknown one lands as 'other' with the raw code kept in `extra` rather
-    // than being rounded off into a category it might not belong to.
-    expect(securityTypeFor(position({ symbol: symbolWithType("zzz") }))).toBe("other");
-    expect(securityTypeFor(position({ symbol: undefined }))).toBe("other");
+  it("falls back to 'other' for a kind added after this was written", () => {
+    expect(securityTypeFor(position({ instrument: instrumentOfKind("warrant") }))).toBe("other");
+    expect(securityTypeFor(position({ instrument: null }))).toBe("other");
   });
 });
-
-function symbolWithType(code: string) {
-  return {
-    symbol: {
-      id: "sym-1",
-      symbol: "TEST",
-      description: "Test Security",
-      type: { code },
-      currency: { code: "USD" },
-    },
-  };
-}

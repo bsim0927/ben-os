@@ -2,7 +2,6 @@ import type {
   FetchLike,
   SnapTradeAccount,
   SnapTradeCredentials,
-  SnapTradeHoldings,
   SnapTradePosition,
 } from "@/lib/financials/snaptrade";
 
@@ -35,37 +34,55 @@ export function account(overrides: Partial<SnapTradeAccount> = {}): SnapTradeAcc
     institution_name: "Fidelity",
     status: "open",
     account_category: "INVESTMENT",
-    sync_status: {
-      holdings: { initial_sync_completed: true, last_successful_sync: "2026-08-02T06:30:00Z" },
-    },
     ...overrides,
   };
 }
 
+/**
+ * The reading time `/positions/all` reports for its own response.
+ *
+ * Response-level in v2 (`data_freshness.as_of`), where the retired holdings
+ * endpoint buried it in the account's `sync_status`.
+ */
+export const AS_OF = "2026-08-02T06:30:00Z";
+
+/**
+ * A position in the v2 shape: a flat `instrument`, and every number a decimal
+ * string rather than a JSON number.
+ */
 export function position(overrides: Partial<SnapTradePosition> = {}): SnapTradePosition {
   return {
-    symbol: {
-      symbol: {
-        id: "sym-vti",
-        symbol: "VTI",
-        raw_symbol: "VTI",
-        description: "Vanguard Total Stock Market ETF",
-        currency: { code: "USD" },
-        type: { code: "et", description: "Exchange Traded Fund" },
-      },
+    instrument: {
+      kind: "etf",
+      id: "inst-vti",
+      symbol: "VTI",
+      raw_symbol: "VTI",
+      description: "Vanguard Total Stock Market ETF",
+      currency: "USD",
+      exchange: "NYSE ARCA",
     },
-    units: 12.5,
-    price: 291.44,
-    open_pnl: 133.2,
-    average_purchase_price: 280.78,
-    currency: { code: "USD" },
+    units: "12.5",
+    price: "291.44",
+    cost_basis: "280.78",
+    currency: "USD",
     cash_equivalent: false,
     ...overrides,
   };
 }
 
-export function holdings(overrides: Partial<SnapTradeHoldings> = {}): SnapTradeHoldings {
-  return { account: account(), positions: [position()], ...overrides };
+/** An `instrument` of a given kind, for the security-type mapping. */
+export function instrumentOfKind(kind: string, symbol = "TEST") {
+  return { kind, id: `inst-${symbol}`, symbol, raw_symbol: symbol, description: `${symbol} Inc.` };
+}
+
+/** The raw `/positions/all` response body, as SnapTrade sends it. */
+export type PositionsResponse = {
+  results: SnapTradePosition[];
+  data_freshness?: { as_of?: string };
+};
+
+export function holdings(overrides: Partial<PositionsResponse> = {}): PositionsResponse {
+  return { results: [position()], data_freshness: { as_of: AS_OF }, ...overrides };
 }
 
 export type StubbedCall = {
@@ -103,7 +120,7 @@ export function stubJson(responses: unknown[]): StubbedFetch {
  * wrong order — or twice.
  */
 export function stubHoldingsByAccount(
-  byAccount: Record<string, SnapTradeHoldings>,
+  byAccount: Record<string, PositionsResponse>,
   { accounts = [] as SnapTradeAccount[] } = {},
 ): StubbedFetch {
   return stub((call) => {
@@ -111,7 +128,7 @@ export function stubHoldingsByAccount(
 
     if (pathname.endsWith("/accounts")) return jsonResponse(accounts);
 
-    const match = /\/accounts\/([^/]+)\/holdings$/.exec(pathname);
+    const match = /\/accounts\/([^/]+)\/positions\/all$/.exec(pathname);
 
     if (match) {
       const id = decodeURIComponent(match[1]);

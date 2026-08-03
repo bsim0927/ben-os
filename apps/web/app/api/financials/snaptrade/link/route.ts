@@ -223,6 +223,5 @@ function describe(account: SnapTradeAccount) {
     number: account.number ?? null,
     institutionName: account.institution_name ?? null,
     brokerageAuthorization: account.brokerage_authorization ?? null,
-    holdingsLastSyncedAt: account.sync_status?.holdings?.last_successful_sync ?? null,
   };
 }
