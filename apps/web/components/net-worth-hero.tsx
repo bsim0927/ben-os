@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { AreaChart } from "@/components/area-chart";
 import { MicroLabel } from "@/components/console";
@@ -201,15 +201,23 @@ function EquationStrip({
 
   return (
     <section aria-label="Net worth equation" className="border-hairline border-t pt-4">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-3">
+      {/*
+       * Each operator is bound to the term it introduces, so a wrap can only
+       * ever fall *between* `+ Account` units — never leaving a `+` or an `=`
+       * stranded at the end of a line, which is what made four accounts read as
+       * a broken list rather than a sum.
+       */}
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
         {equation.terms.map((term, index) => (
-          <Fragment key={term.key}>
+          <div key={term.accountId} className="flex shrink-0 items-start gap-x-3">
             {index > 0 ? <Operator>+</Operator> : null}
             <Term label={term.label} value={formatAmount(term.value, currency)} />
-          </Fragment>
+          </div>
         ))}
-        <Operator>=</Operator>
-        <Term label="Net worth" value={formatAmount(equation.total, currency)} emphasised />
+        <div className="flex shrink-0 items-start gap-x-3">
+          <Operator>=</Operator>
+          <Term label="Net worth" value={formatAmount(equation.total, currency)} emphasised />
+        </div>
       </div>
       {asOf ? <p className="text-muted mt-3 text-[12px]">As of {formatDay(asOf)}</p> : null}
     </section>

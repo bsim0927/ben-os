@@ -32,8 +32,6 @@ type AccountRow = {
   name: string;
   status: string;
   currency: string;
-  /** The institution this account is reached through — the equation strip's terms. */
-  financials_connection: { name: string } | null;
 };
 
 type SnapshotRow = {
@@ -48,7 +46,7 @@ export default async function FinancialsOverview() {
   const [accounts, snapshots] = await Promise.all([
     supabase
       .from("financials_account")
-      .select("id, name, status, currency, financials_connection ( name )")
+      .select("id, name, status, currency")
       .order("name")
       .returns<AccountRow[]>(),
     supabase
@@ -69,9 +67,6 @@ export default async function FinancialsOverview() {
     // unrecognised counts as active — dropping a live account out of net worth
     // is the worse of the two ways to be wrong.
     status: row.status === "closed" ? "closed" : "active",
-    // One term per institution, not per account. An account whose connection has
-    // no name stands as its own term rather than joining a nameless group.
-    group: row.financials_connection?.name ?? row.name,
   }));
 
   const snapshotInputs: SnapshotInput[] = (snapshots.data ?? []).map((row) => ({

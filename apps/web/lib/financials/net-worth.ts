@@ -35,16 +35,6 @@ export type AccountRef = {
   name: string;
   /** A closed account stops contributing, see `buildNetWorthSeries`. */
   status: AccountStatus;
-  /**
-   * What the equation strip adds this account under — its Connection's name.
-   *
-   * The strip is meant to read `Chase Bank + Fidelity Investments = Net worth`,
-   * one term per institution, not one per account: a real subscription has a
-   * card and a checking account behind one login and two funds behind another,
-   * and four terms is a list rather than an equation. Falls back to the
-   * account's own name where a connection has none.
-   */
-  group: string;
 };
 
 /** Numerics arrive from PostgREST as strings; normalising is this module's job, not its callers'. */
@@ -63,8 +53,7 @@ export type NetWorthPoint = {
 };
 
 export type EquationTerm = {
-  /** The group's name, which is also what identifies it — see `AccountRef.group`. */
-  key: string;
+  accountId: string;
   label: string;
   value: number;
 };
@@ -161,13 +150,19 @@ export function windowSeries(
 }
 
 /**
- * The equation strip's terms: one per Connection contributing at `point`, in the
- * order its accounts first appear, plus the total they sum to.
+ * The equation strip's terms: one per account contributing at `point`, in the
+ * order the accounts were given, plus the total they sum to.
  *
- * Grouping is what makes it an equation rather than a list — see
- * `AccountRef.group`. A group with no balance at this point is left out rather
- * than shown as zero: `Chase + Old Savings + Fidelity` with a zero in the middle
- * claims a relationship that ended.
+ * One term per *account*, not per institution. Grouping by connection would read
+ * closer to the `Chase + Fidelity` of the original sketch, but it hides which
+ * account holds what — and the balances that matter most here are the ones that
+ * disagree with their neighbours, like a card sitting negative behind the same
+ * login as a checking account. The strip is the place that detail is visible
+ * without leaving the page; wrapping is the layout's problem to solve.
+ *
+ * An account with no balance at this point is left out rather than shown as
+ * zero — `Chase + Old Savings + Fidelity` with a zero in the middle claims a
+ * relationship that ended.
  */
 export function equationFor(
   point: NetWorthPoint | undefined,
@@ -175,18 +170,13 @@ export function equationFor(
 ): NetWorthEquation {
   if (!point) return { terms: [], total: 0 };
 
-  // Insertion-ordered, so the terms follow the order the accounts were given.
-  const grouped = new Map<string, number>();
-
-  for (const account of accounts) {
-    const value = point.byAccount[account.id];
-
-    if (value === undefined) continue;
-
-    grouped.set(account.group, round((grouped.get(account.group) ?? 0) + value));
-  }
-
-  const terms = [...grouped].map(([key, value]) => ({ key, label: key, value }));
+  const terms = accounts
+    .filter((account) => point.byAccount[account.id] !== undefined)
+    .map((account) => ({
+      accountId: account.id,
+      label: account.name,
+      value: point.byAccount[account.id],
+    }));
 
   return { terms, total: point.total };
 }

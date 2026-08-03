@@ -39,20 +39,8 @@ function stubSupabase(results: Record<string, TableResult>) {
 }
 
 const accounts = [
-  {
-    id: "chase",
-    name: "CHASE COLLEGE (8923)",
-    status: "active",
-    currency: "USD",
-    financials_connection: { name: "Chase Bank" },
-  },
-  {
-    id: "fidelity",
-    name: "Individual (5008)",
-    status: "active",
-    currency: "USD",
-    financials_connection: { name: "Fidelity Investments" },
-  },
+  { id: "chase", name: "CHASE COLLEGE (8923)", status: "active", currency: "USD" },
+  { id: "fidelity", name: "Individual (5008)", status: "active", currency: "USD" },
 ];
 
 function snapshot(accountId: string, day: string, balance: string) {
@@ -181,7 +169,7 @@ describe("the financials overview", () => {
     await renderPage();
 
     expect(equationStrip().textContent).toMatch(
-      /Chase Bank[\s\S]*\+[\s\S]*Fidelity Investments[\s\S]*=[\s\S]*Net worth/,
+      /CHASE COLLEGE \(8923\)[\s\S]*\+[\s\S]*Individual \(5008\)[\s\S]*=[\s\S]*Net worth/,
     );
   });
 
@@ -200,28 +188,19 @@ describe("the financials overview", () => {
     expect(within(table).getByText(/Net worth by day/)).toBeInTheDocument();
   });
 
-  it("adds an institution's accounts into one term rather than listing all four", async () => {
+  it("gives every account its own term, all four of them", async () => {
     // The real subscription: a card and a checking account behind the Chase
-    // login, two funds behind Fidelity's. Four terms would be a list, and the
-    // strip is meant to say net worth is the sum of two institutions.
+    // login, two funds behind Fidelity's. The card sitting negative next to the
+    // checking account is the whole reason this is per-account and not per
+    // institution — folding them together would hide it.
     stubSupabase({
       financials_account: {
+        // Listed the way `.order("name")` returns them, so the terms come out in
+        // the order the real page puts them in.
         data: [
           ...accounts,
-          {
-            id: "card",
-            name: "United Explorer (3887)",
-            status: "active",
-            currency: "USD",
-            financials_connection: { name: "Chase Bank" },
-          },
-          {
-            id: "roth",
-            name: "ROTH IRA (3715)",
-            status: "active",
-            currency: "USD",
-            financials_connection: { name: "Fidelity Investments" },
-          },
+          { id: "roth", name: "ROTH IRA (3715)", status: "active", currency: "USD" },
+          { id: "card", name: "United Explorer (3887)", status: "active", currency: "USD" },
         ],
         error: null,
       },
@@ -243,8 +222,10 @@ describe("the financials overview", () => {
     await renderPage();
 
     expect(equationTerms()).toEqual([
-      ["Chase Bank", "-$290.43"],
-      ["Fidelity Investments", "$5,942.89"],
+      ["CHASE COLLEGE (8923)", "$2,018.85"],
+      ["Individual (5008)", "$5,334.03"],
+      ["ROTH IRA (3715)", "$608.86"],
+      ["United Explorer (3887)", "-$2,309.28"],
       ["Net worth", "$5,652.46"],
     ]);
   });
@@ -271,8 +252,8 @@ describe("the financials overview", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     // The money is still real and still adds up.
     expect(equationTerms()).toEqual([
-      ["Chase Bank", "$2,018.85"],
-      ["Fidelity Investments", "$5,334.03"],
+      ["CHASE COLLEGE (8923)", "$2,018.85"],
+      ["Individual (5008)", "$5,334.03"],
       ["Net worth", "$7,352.88"],
     ]);
   });
@@ -288,8 +269,8 @@ describe("the financials overview", () => {
       const [, latestOnChart] = chartData().at(-1)!;
 
       expect(terms).toEqual([
-        ["Chase Bank", "$5,000.00"],
-        ["Fidelity Investments", "$45,000.00"],
+        ["CHASE COLLEGE (8923)", "$5,000.00"],
+        ["Individual (5008)", "$45,000.00"],
         ["Net worth", "$50,000.00"],
       ]);
       // The claim the strip exists to make: the total is the sum of the terms,
@@ -356,8 +337,8 @@ describe("the financials overview", () => {
 
     expect(chartData().at(-1)).toEqual(["31 Jul 2026", "$10,500.00"]);
     expect(equationTerms()).toEqual([
-      ["Chase Bank", "$1,000.00"],
-      ["Fidelity Investments", "$9,500.00"],
+      ["CHASE COLLEGE (8923)", "$1,000.00"],
+      ["Individual (5008)", "$9,500.00"],
       ["Net worth", "$10,500.00"],
     ]);
   });
@@ -382,8 +363,8 @@ describe("the financials overview", () => {
 
     expect(screen.getByText(/No balance readings in the last 1 month/)).toBeInTheDocument();
     expect(equationTerms()).toEqual([
-      ["Chase Bank", "$2,000.00"],
-      ["Fidelity Investments", "$18,000.00"],
+      ["CHASE COLLEGE (8923)", "$2,000.00"],
+      ["Individual (5008)", "$18,000.00"],
       ["Net worth", "$20,000.00"],
     ]);
     expect(screen.queryByText("$0.00")).not.toBeInTheDocument();

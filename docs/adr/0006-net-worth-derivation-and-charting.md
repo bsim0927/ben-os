@@ -46,12 +46,17 @@ The net worth chart ([#24](https://github.com/bsim0927/ben-os/issues/24)) is the
 - **A server round trip per range change** (`?range=` search param) — rejected per decision 5. Simpler, and it makes a zoom control feel like a page load for data already in the browser.
 - **A charting library** (Recharts, visx, Chart.js) — rejected per decision 7. The one chart this app needs is an area with gridlines and an emphasised endpoint; the dependency and its bundle cost more than the geometry does.
 - **Asserting the chart through the SVG path string** — rejected per decision 8. It couples the test to pixel arithmetic that the geometry tests already cover, and asserts nothing about whether the figures are right.
+- **Grouping the equation strip's terms by Connection** — rejected per amendment 10. It matches the ticket's wording more literally and stays short as accounts are added, but it nets a card against a checking account behind the same login and hides the balance most worth looking at.
 
 ## Amendments
 
 Made on 2026-08-02, after looking at the shipped page against the real account — the first time any of this met data that wasn't a fixture. All three changes were things fixtures could not have told us.
 
-10. **The equation strip has one term per Connection, not per Account.** The fixtures had two accounts, one per institution, so `Chase + Fidelity = Net worth` fell out for free. The real subscription has four accounts — a card and a checking account behind the Chase login, two funds behind Fidelity's — and one term each made the strip a wrapping list rather than an equation. Terms now group by the account's Connection, which is both what [#24](https://github.com/bsim0927/ben-os/issues/24) described and what keeps the strip readable as accounts are added. Per-account figures remain on `/financials/raw`.
+10. **The equation strip has one term per Account, and the layout absorbs the count.** The fixtures had two accounts, one per institution, so the `Chase + Fidelity = Net worth` of [#24](https://github.com/bsim0927/ben-os/issues/24)'s sketch fell out for free. The real subscription has four — a card and a checking account behind the Chase login, two funds behind Fidelity's — and the strip wrapped into something that read as a list.
+
+    Grouping by Connection was tried and **rejected by the owner**: it restores the literal `Chase + Fidelity` wording, but it hides which account holds what, and the balances worth seeing are exactly the ones that disagree with their neighbours — a credit card sitting negative behind the same login as a checking account disappears into a netted institution total. The wrapping was the real defect, so the wrapping was fixed instead: each operator is bound to the term it introduces, so a line can only ever break _between_ `+ Account` units and never strand a `+` or an `=` at the end of a row.
+
+    The ticket's `Chase + Fidelity` is therefore read as illustrating the _shape_ of the claim — net worth is a sum of what you hold — rather than fixing the number of terms.
 
 11. **A single reading is a stated state, not a one-point chart.** Balance history cannot be backfilled — SimpleFIN serves the current balance only — so every account's first day has exactly one point. Drawn as a chart that was a lone dot at the right edge of an empty grid, with the date label at the _left_ edge, which reads as a broken chart rather than as a new account. It now says how many readings there are and that the trend appears after the next poll.
 
