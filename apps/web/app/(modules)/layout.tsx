@@ -3,14 +3,8 @@ import { redirect } from "next/navigation";
 import { CrumbRow } from "@/components/crumb-row";
 import { ModuleSidebar } from "@/components/module-sidebar";
 import { authorizedUserFor, isAuthorizedEmail, loginRedirectFor } from "@/lib/auth";
+import { describeSyncStatus, readSyncStatus } from "@/lib/financials/sync-status";
 import { createClient } from "@/lib/supabase/server";
-
-/**
- * Nothing syncs yet — the Financials module brings the first real source, and
- * these are the two seams it will feed.
- */
-const LAST_SYNCED = "No syncs yet";
-const SYNC_STATUS = "No sources connected";
 
 /**
  * The dashboard shell, and the inner half of the auth gate.
@@ -29,11 +23,15 @@ export default async function ShellLayout({ children }: { children: React.ReactN
     redirect(loginRedirectFor(user));
   }
 
+  // Only after the gate: an unauthorized visitor should be redirected, not
+  // served a count of the accounts they aren't allowed to see.
+  const sync = describeSyncStatus(await readSyncStatus(), new Date());
+
   return (
     <div className="flex min-h-full flex-1">
-      <ModuleSidebar user={authorizedUserFor(user)} lastSynced={LAST_SYNCED} />
+      <ModuleSidebar user={authorizedUserFor(user)} lastSynced={sync.lastSynced} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <CrumbRow syncStatus={SYNC_STATUS} />
+        <CrumbRow syncStatus={sync.chip} />
         <main className="min-w-0 flex-1 px-9 pb-16">{children}</main>
       </div>
     </div>
