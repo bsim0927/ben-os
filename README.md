@@ -158,9 +158,13 @@ is [ADR 0005](docs/adr/0005-financials-sync-execution-model.md) — RLS, transac
 poll windows, and what it refuses to overwrite. The protocol notes behind it are in
 [`docs/research/simplefin-bridge-api.md`](docs/research/simplefin-bridge-api.md).
 
-`/financials` today is a **raw-data view** — accounts, balance snapshots and transactions as plain
-tables. It exists to make sync correctness visible, and the designed surfaces (net worth, the flow
-view, the Fidelity balance bridge, holdings) come in later tickets.
+`/financials/raw` is a **raw-data view** — accounts, balance snapshots, transactions and holdings as
+plain tables. It exists to make sync correctness visible, and the designed surfaces (the flow view,
+the Fidelity balance bridge, a real holdings page) come in later tickets.
+
+Two providers feed it. **SimpleFIN** supplies balances and transactions for every account; **SnapTrade**
+supplies the per-security holdings inside the Fidelity accounts, which SimpleFIN's flat `balance`
+cannot express. They are separate jobs on separate schedules, and only SimpleFIN creates accounts.
 
 ### Linking SimpleFIN
 
@@ -252,6 +256,69 @@ even on Hobby, and answers them with a 307 to a Vercel SSO login — so a curl t
 and never reaches the route. The production domain is exempt on Hobby, which is also why the
 scheduled invocation is unaffected: Vercel cron runs against production. Worth knowing that cron
 **does not follow redirects**, so a protected endpoint would fail silently rather than retry.
+
+### Linking SnapTrade, for Fidelity holdings
+
+SimpleFIN reports a Fidelity account's total balance and nothing about what is
+_inside_ it. Per-security holdings come from **SnapTrade**, in its free Personal mode — the pick and
+the alternatives are in [`docs/research/brokerage-holdings-provider.md`](docs/research/brokerage-holdings-provider.md),
+and how the sync behaves is [ADR 0007](docs/adr/0007-snaptrade-holdings-sync.md).
+
+Create a Personal API key at [dashboard.snaptrade.com](https://dashboard.snaptrade.com) — every
+account gets one free, with no approval step — and set `SNAPTRADE_CLIENT_ID` and
+`SNAPTRADE_CONSUMER_KEY`. Then, signed in as the authorized account:
+
+```sh
+# 1. Get a Connection Portal URL, and open it in a browser.
+curl -X POST https://<deployment>/api/financials/snaptrade/portal -b '<your session cookies>'
+```
+
+The portal is Fidelity's own login plus the **Fidelity Access** consent screen. That step cannot be
+automated and shouldn't be — agreeing to the sharing is the whole point of it.
+
+```sh
+# 2. See what SnapTrade now exposes, next to the accounts this app already has.
+curl https://<deployment>/api/financials/snaptrade/link -b '<your session cookies>'
+
+# 3. Say which is which.
+curl -X POST https://<deployment>/api/financials/snaptrade/link \
+  -H 'Content-Type: application/json' -b '<your session cookies>' \
+  -d '{"links":{"<snapTradeAccountId>":"<accountId>"}}'
+```
+
+Step 3 is the part with no automatic answer, and it is worth understanding rather than pasting.
+Both Fidelity accounts are **already** rows in `financials_account`, synced from SimpleFIN. SnapTrade
+reports the same two accounts under unrelated ids and a differently-masked number, and nothing in
+either provider's data says the two describe the same account. So the holdings sync never creates
+accounts — it attaches holdings to the rows that exist, using the mapping you state here. A sync
+that guessed, or that simply upserted its own accounts, would count Fidelity twice in net worth.
+
+Posting the links also sets `kind = 'investment'` on each account: pointing a brokerage connection at
+an account _is_ the assertion that it holds securities, which is the one thing
+[ADR 0003](docs/adr/0003-financials-multi-provider-and-account-kind.md) makes user-owned.
+
+`apps/web/vercel.json` then runs `/api/cron/financials-holdings` **once a day, in the 13:00 UTC
+hour** — the free Daily plan refreshes each connection once a day and serves the cached reading in
+between, so a second call the same day would return identical numbers.
+
+Two things about that job differ from the SimpleFIN one:
+
+- **It appends rather than upserts.** Holdings carry no provider-issued id to dedupe against, so
+  every sync writes a fresh row per `(account, security)` and `as_of` separates them
+  ([ADR 0004](docs/adr/0004-financials-holding-schema.md)). "Current holdings" is the latest `as_of`,
+  not a table.
+- **`as_of` is SnapTrade's reading time, not ours.** That is what makes a retry free: two runs
+  between provider refreshes see the same timestamp, collide on
+  `(account_id, security_id, as_of)`, and write nothing. Stamping `now()` would slip past the
+  constraint and store the same numbers again.
+
+Before anything is linked the route answers **200** with `{"status":"not-linked"}` — a resting
+state, not a failure. Until a human has been through the portal there is genuinely nothing to fetch,
+and a non-2xx would read as a broken job every day until then.
+
+> [!IMPORTANT]
+> This is the **second** of the two cron jobs Vercel Hobby allows. A third scheduled job needs
+> Vercel Pro, or an external scheduler `curl`ing the route with `CRON_SECRET`.
 
 ### Testing the sync
 

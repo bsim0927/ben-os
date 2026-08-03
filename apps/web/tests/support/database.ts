@@ -63,6 +63,8 @@ export async function asSuperuser<T>(body: (query: QueryFn) => Promise<T>): Prom
 const FINANCIALS_TABLES = [
   "public.financials_transaction",
   "public.financials_balance_snapshot",
+  "public.financials_holding",
+  "public.financials_security",
   "public.financials_account",
   "public.financials_connection",
   "public.financials_category",

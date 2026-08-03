@@ -56,5 +56,12 @@ A tradable financial instrument (stock, ETF, mutual fund, etc.), identified by t
 _Avoid_: Ticker, symbol, instrument — "Security" is the entity; a ticker/symbol is one of its fields.
 
 **Holding**:
-A snapshot of a Security's position within an Account as of a given sync — quantity, cost basis, market price. A new row is written on every sync (not upserted), so "current holdings" means the latest snapshot per Account/Security pair, not a standing record.
+A snapshot of a Security's position within an Account as of a given sync — quantity, cost basis, market price. A new row is written on every sync (not upserted), so "current holdings" means the latest snapshot per Account/Security pair, not a standing record. Its `as_of` is the _provider's_ reading time, not the moment the job ran — see [ADR 0007](docs/adr/0007-snaptrade-holdings-sync.md).
 _Avoid_: Position — used in the SnapTrade research as an interchangeable term, but "Holding" is this codebase's canonical word.
+
+**Account link**:
+The user's assertion that a given provider's account and an Account this app already has are the same real account. Needed because two providers report the same Fidelity accounts under unrelated ids, and only the account holder can say so. Recorded on the SnapTrade Connection's `extra`, and the reason the holdings sync attaches to existing Accounts rather than creating its own — a second row would count the account twice in Net worth.
+_Avoid_: Mapping, match — "match" suggests something derived from the data, and this is deliberately asserted rather than inferred.
+
+**Connection Portal**:
+SnapTrade's hosted page where the user completes the brokerage OAuth — for Fidelity, its own login plus the Fidelity Access consent screen. The app can request a portal URL but cannot complete the flow; what comes out the far side is the `authorizationId` that identifies the Connection from then on.
