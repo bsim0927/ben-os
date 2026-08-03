@@ -10,8 +10,13 @@ import {
   type SnapshotInput,
 } from "@/lib/financials/net-worth";
 
-const chase: AccountRef = { id: "chase", name: "Chase", status: "active" };
-const fidelity: AccountRef = { id: "fidelity", name: "Fidelity", status: "active" };
+const chase: AccountRef = { id: "chase", name: "Chase", status: "active", group: "Chase" };
+const fidelity: AccountRef = {
+  id: "fidelity",
+  name: "Fidelity",
+  status: "active",
+  group: "Fidelity",
+};
 
 function snapshot(accountId: string, day: string, balance: number | string): SnapshotInput {
   return { accountId, balanceDate: `${day}T12:00:00Z`, balance };
@@ -97,7 +102,12 @@ describe("buildNetWorthSeries", () => {
     // Closure preserves history (ADR 0002) — so the old balance still counts on
     // the days it was real, and stops counting once the account stopped
     // reporting. Carrying it forward would inflate net worth indefinitely.
-    const closed: AccountRef = { id: "old", name: "Old Savings", status: "closed" };
+    const closed: AccountRef = {
+      id: "old",
+      name: "Old Savings",
+      status: "closed",
+      group: "Old Savings",
+    };
 
     const series = buildNetWorthSeries({
       accounts: [chase, closed],
@@ -202,11 +212,38 @@ describe("equationFor", () => {
   it("names one term per contributing account, in the order the accounts are listed", () => {
     expect(equationFor(point, [chase, fidelity])).toEqual({
       terms: [
-        { accountId: "chase", label: "Chase", value: 1_500 },
-        { accountId: "fidelity", label: "Fidelity", value: 98_500 },
+        { key: "Chase", label: "Chase", value: 1_500 },
+        { key: "Fidelity", label: "Fidelity", value: 98_500 },
       ],
       total: 100_000,
     });
+  });
+
+  it("adds an institution's accounts into one term, so the strip stays an equation", () => {
+    // A real subscription has a card and a checking account behind one login;
+    // four terms is a list, and `Chase + Fidelity = Net worth` is the point.
+    const card: AccountRef = {
+      id: "card",
+      name: "United Explorer",
+      status: "active",
+      group: "Chase",
+    };
+    const roth: AccountRef = { id: "roth", name: "ROTH IRA", status: "active", group: "Fidelity" };
+
+    const equation = equationFor(
+      {
+        date: "2026-08-01",
+        total: 5_652.46,
+        byAccount: { chase: 2_018.85, card: -2_309.28, fidelity: 5_334.03, roth: 608.86 },
+      },
+      [chase, card, fidelity, roth],
+    );
+
+    expect(equation.terms).toEqual([
+      { key: "Chase", label: "Chase", value: -290.43 },
+      { key: "Fidelity", label: "Fidelity", value: 5_942.89 },
+    ]);
+    expect(equation.terms.reduce((sum, term) => sum + term.value, 0)).toBe(equation.total);
   });
 
   it("sums its terms to the total it reports — the strip's whole claim", () => {
@@ -216,11 +253,16 @@ describe("equationFor", () => {
   });
 
   it("omits an account that is not contributing at this point", () => {
-    const closed: AccountRef = { id: "old", name: "Old Savings", status: "closed" };
+    const closed: AccountRef = {
+      id: "old",
+      name: "Old Savings",
+      status: "closed",
+      group: "Old Savings",
+    };
 
-    expect(equationFor(point, [chase, fidelity, closed]).terms.map((t) => t.accountId)).toEqual([
-      "chase",
-      "fidelity",
+    expect(equationFor(point, [chase, fidelity, closed]).terms.map((t) => t.key)).toEqual([
+      "Chase",
+      "Fidelity",
     ]);
   });
 
