@@ -2,6 +2,7 @@
 
 import { useId } from "react";
 
+import { ChartGridlines } from "@/components/console";
 import { areaChartGeometry, type ChartDatum } from "@/lib/chart";
 
 /**
@@ -65,27 +66,12 @@ export function AreaChart({
           </linearGradient>
         </defs>
 
-        {gridlines.map((gridline) => (
-          <g key={gridline.value}>
-            <line
-              x1={PADDING.left}
-              x2={WIDTH - PADDING.right}
-              y1={gridline.y}
-              y2={gridline.y}
-              className="stroke-hairline"
-              strokeWidth={1}
-            />
-            <text
-              x={PADDING.left - 10}
-              y={gridline.y + 4}
-              textAnchor="end"
-              fontSize={12}
-              className="fill-muted tabular-nums"
-            >
-              {formatTick(gridline.value)}
-            </text>
-          </g>
-        ))}
+        <ChartGridlines
+          gridlines={gridlines}
+          left={PADDING.left}
+          right={WIDTH - PADDING.right}
+          formatTick={formatTick}
+        />
 
         {area ? <path d={area} fill={`url(#${fillId})`} /> : null}
         {line ? (

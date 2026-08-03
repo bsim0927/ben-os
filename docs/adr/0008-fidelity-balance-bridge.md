@@ -35,6 +35,8 @@ The question is harder than it looks for one reason: **the largest term has no t
 
 4. **Outbound is checked before inbound, because the wording overlaps.** `TRANSFERRED TO … CURRENT CONTRIBUTION` is worded as a contribution because it _is_ one — to the other account. Matching `contribution` first would count money leaving as money arriving and put double its value on the wrong side of the bridge. `transferred to` therefore wins.
 
+   Two more orderings carry the same weight. `cap gain` is matched as a dividend _before_ the outbound rule, because `LONG-TERM CAP GAIN DISTRIBUTION` is a payout while a bare `DISTRIBUTION` is money leaving a retirement account — only the order tells them apart. And `sent` is outbound, because the inbound rule matches a bare `electronic funds transfer`: that is the only wording the feed has sent so far, but it is half of a pair, and its opposite would otherwise read as money arriving.
+
    Contributions are reported as a **net**: an outbound transfer is a negative contribution, not a segment of its own. The bridge's shape is fixed at six columns, and a `Withdrawals` column that is empty in almost every period would cost more than it explains.
 
 5. **Internal reallocations are deliberately untagged.** A reinvestment, a buy, or a sell moves value _within_ the account and changes its worth by nothing. These are matched first and tagged `null`, so they land in no segment.
@@ -60,3 +62,19 @@ The question is harder than it looks for one reason: **the largest term has no t
 - **Tagging on write, in a column** — rejected. The tagging is a heuristic that will be revised, and a stored tag would freeze whichever version of the rules happened to run at sync time. Deriving it at read time means an improved rule improves history too.
 - **Letting the user correct a tag** — deferred, not rejected. It is the obvious next step if the descriptions turn out to be more varied than the current feed suggests, and decision 1 means a wrong tag is already survivable in the meantime.
 - **Drawing the bridge from 0 rather than with headroom** — rejected per decision 9: truthful about the axis, and it renders every segment the bridge exists to show as a sliver.
+
+## Consequences
+
+- **The bridge is only as good as its window, and the window needs history we do not yet have.** Two balance readings are the minimum, and production has one per account per sync day. Until several weeks have accrued, the default `1M` view will place most activity before `startDay` and attribute nearly all of it to Growth. That is arithmetically correct and temporarily uninformative; it improves on its own, and nothing can hurry it, because balance history cannot be backfilled.
+
+- **A new wording is a silent mis-attribution, not an error.** Decision 1 guarantees the bridge still adds up when the tagging misses something, which means nothing fails loudly. The cost of that safety is that a wrong rule looks exactly like an unremarkable period. Two mitigations exist and neither is complete: the tagging is unit-tested against descriptions copied from the live feed rather than invented, and the segment values are on screen where a wrong one is at least visible. If the feed's vocabulary turns out to be wider than it currently looks, the answer is the deferred "let the user correct a tag" option above.
+
+  A **direction** error is the expensive kind: it is wrong by twice the amount, because the money moves to the opposite side of the bridge as well as out of Growth. Any new rule that decides inbound-vs-outbound deserves a test naming the real wording, and the ordering of the rules is load-bearing — `LONG-TERM CAP GAIN DISTRIBUTION` is income and `DISTRIBUTION PARTIAL` is not, and only the order tells them apart.
+
+- **`financials_transaction` gets a second reader with different needs.** Flow reads amounts with their signs and cares about categories; the bridge reads descriptions and ignores both. Neither can now change how it treats a row without checking the other — a sign normalisation applied at sync time, in particular, would fix one and break the other (see the rejected option above).
+
+- **The page's 1000-row bound now affects a figure that does not look bounded.** A transaction the page never loaded silently becomes Growth. The panel says so when the bound is hit, but the bound is across every account at once, so a busy month on the depository side can truncate a brokerage period that looks complete.
+
+- **The overview page now holds two `sr-only` chart tables and two period toggles.** Tests that reached for _the_ table or _the_ "over 1 month" on the page had to be scoped; anything added later must scope from the start.
+
+- **`closingBalancesByDay` is now shared with net worth.** The bridge's ends and the chart's points are the same reading by construction, which is what keeps a bridge that ends at $11,000 from sitting under a chart that ends somewhere else. It also means a change to that rule moves both surfaces, which is the intended trade.

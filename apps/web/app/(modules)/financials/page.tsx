@@ -119,30 +119,30 @@ export default async function FinancialsOverview() {
     status: row.status === "closed" ? "closed" : "active",
   }));
 
-  // `kind` is read strictly, unlike `status`: the flow framing is only right for
-  // an account someone has said is depository (ADR 0003 — no provider signals
-  // it), and drawing income and expenses for a brokerage would be worse than
-  // leaving it to the balance bridge that suits it.
-  const flowAccounts: FlowAccountRef[] = (accounts.data ?? [])
-    .filter((row) => row.kind === "depository")
-    .map((row) => ({
-      id: row.id,
-      name: row.name,
-      status: row.status === "closed" ? "closed" : "active",
-      currency: row.currency,
-    }));
+  /**
+   * The accounts one framing applies to.
+   *
+   * `kind` is read strictly, unlike `status`: a framing is only right for an
+   * account someone has *said* is that kind (ADR 0003 — no provider signals it),
+   * so an unrecognised value gets neither panel rather than the wrong one.
+   * Drawing income and expenses for a brokerage would be worse than leaving it
+   * to the bridge, and vice versa.
+   */
+  const accountsOfKind = (kind: string): FlowAccountRef[] =>
+    (accounts.data ?? [])
+      .filter((row) => row.kind === kind)
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        status: row.status === "closed" ? "closed" : "active",
+        currency: row.currency,
+      }));
 
-  // The other half of the same `kind` split: an investment account gets the
-  // balance bridge, and never the flow panel's category picker — its activity is
+  const flowAccounts = accountsOfKind("depository");
+  // The other half of the same split: an investment account gets the balance
+  // bridge, and never the flow panel's category picker — its activity is
   // auto-tagged from the description instead (spec #32).
-  const bridgeAccounts: BridgeAccountRef[] = (accounts.data ?? [])
-    .filter((row) => row.kind === "investment")
-    .map((row) => ({
-      id: row.id,
-      name: row.name,
-      status: row.status === "closed" ? "closed" : "active",
-      currency: row.currency,
-    }));
+  const bridgeAccounts: BridgeAccountRef[] = accountsOfKind("investment");
 
   const bridgeTransactions: BridgeTransactionInput[] = (transactions.data ?? []).map((row) => ({
     id: row.id,
@@ -200,6 +200,7 @@ export default async function FinancialsOverview() {
         transactions={bridgeTransactions}
         snapshots={snapshotInputs}
         today={new Date().toISOString()}
+        truncated={(transactions.data ?? []).length >= TRANSACTION_LIMIT}
       />
 
       <p className="border-hairline text-muted border-t pt-3 text-[13px]">

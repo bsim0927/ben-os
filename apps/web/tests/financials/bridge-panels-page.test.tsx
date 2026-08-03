@@ -372,6 +372,36 @@ describe("the period the bridge covers", () => {
   });
 });
 
+describe("when the page hits its row bound", () => {
+  it("says so, because the missing activity becomes growth rather than going missing", async () => {
+    // The one way this panel can be wrong while still adding up: growth is the
+    // residual, so activity the page never loaded is silently attributed to the
+    // market instead of to the contribution that actually caused it.
+    seeded({
+      financials_transaction: {
+        data: Array.from({ length: 1000 }, (_, index) =>
+          transaction(`bulk-${index}`, "chase", "2026-07-20", "COFFEE", "-3.00"),
+        ),
+        error: null,
+      },
+    });
+    await renderPage();
+
+    expect(
+      within(screen.getByRole("region", { name: "Balance bridge" })).getByText(
+        /Only the 1,000 most recent transactions are loaded — activity before that is counted as growth/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("stays quiet about the bound when everything fits inside it", async () => {
+    seeded();
+    await renderPage();
+
+    expect(screen.queryByText(/counted as growth/)).not.toBeInTheDocument();
+  });
+});
+
 describe("what the bridge deliberately is not", () => {
   it("does not list the brokerage's transactions", async () => {
     seeded();

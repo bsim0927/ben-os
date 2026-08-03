@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { MicroLabel, SegmentedToggle } from "@/components/console";
+import { ChartGridlines, MicroLabel, SegmentedToggle } from "@/components/console";
 import { waterfallGeometry, type WaterfallBar } from "@/lib/chart";
 import {
   buildBridgePanels,
@@ -48,9 +48,17 @@ export type BridgePanelsProps = {
   snapshots: readonly SnapshotInput[];
   /** ISO timestamp the periods are measured back from. */
   today: string;
+  /** The page hit its row bound, so some activity may be missing from the middle. */
+  truncated?: boolean;
 };
 
-export function BridgePanels({ accounts, transactions, snapshots, today }: BridgePanelsProps) {
+export function BridgePanels({
+  accounts,
+  transactions,
+  snapshots,
+  today,
+  truncated = false,
+}: BridgePanelsProps) {
   const [period, setPeriod] = useState<TimeRange>("1M");
 
   const panels = useMemo(
@@ -72,6 +80,18 @@ export function BridgePanels({ accounts, transactions, snapshots, today }: Bridg
             What moved each brokerage balance — contributions and dividends in, fees out, and market
             growth as whatever is left over.
           </p>
+          {/*
+           * Growth is the residual, so a transaction the page never loaded does
+           * not go missing — it silently becomes growth. That is the one way
+           * this panel can be wrong while still adding up, which is exactly why
+           * it has to be said rather than inferred.
+           */}
+          {truncated ? (
+            <p className="text-muted mt-1 text-[12px]">
+              Only the {transactions.length.toLocaleString("en-US")} most recent transactions are
+              loaded — activity before that is counted as growth.
+            </p>
+          ) : null}
         </div>
 
         <SegmentedToggle
@@ -165,27 +185,12 @@ function BridgeChart({
         preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
       >
-        {gridlines.map((gridline) => (
-          <g key={gridline.value}>
-            <line
-              x1={PADDING.left}
-              x2={WIDTH - PADDING.right}
-              y1={gridline.y}
-              y2={gridline.y}
-              className="stroke-hairline"
-              strokeWidth={1}
-            />
-            <text
-              x={PADDING.left - 10}
-              y={gridline.y + 4}
-              textAnchor="end"
-              fontSize={12}
-              className="fill-muted tabular-nums"
-            >
-              {formatCompactAmount(gridline.value, currency)}
-            </text>
-          </g>
-        ))}
+        <ChartGridlines
+          gridlines={gridlines}
+          left={PADDING.left}
+          right={WIDTH - PADDING.right}
+          formatTick={(value) => formatCompactAmount(value, currency)}
+        />
 
         {connectors.map((connector, index) => (
           <line
@@ -223,7 +228,7 @@ function BridgeChart({
                 fontSize={12}
                 className="fill-ink tabular-nums"
               >
-                {renderSegment(segment, currency)}
+                {formatSegment(segment, currency)}
               </text>
               <text
                 x={bar.x + bar.width / 2}
@@ -257,7 +262,7 @@ function BridgeChart({
             {bridge.segments.map((segment) => (
               <tr key={segment.kind}>
                 <th scope="row">{segment.label}</th>
-                <td>{renderSegment(segment, currency)}</td>
+                <td>{formatSegment(segment, currency)}</td>
               </tr>
             ))}
           </tbody>
@@ -286,7 +291,7 @@ function BridgeChart({
  * period with no fees reads `$0.00` rather than the `+$0.00` a signed formatter
  * would give it.
  */
-function renderSegment(segment: BridgeSegment, currency?: string): string {
+function formatSegment(segment: BridgeSegment, currency?: string): string {
   return segment.total || segment.value === 0
     ? formatAmount(segment.value, currency)
     : formatSignedAmount(segment.value, currency);

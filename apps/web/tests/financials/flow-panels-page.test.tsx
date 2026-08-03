@@ -328,8 +328,12 @@ describe("the flow stats", () => {
     });
     await renderPage();
 
+    // Scoped: the balance bridge below reports the same bound in its own words,
+    // because a transaction it never loaded silently becomes growth.
     expect(
-      screen.getByText(/Only the 1,000 most recent transactions are loaded/),
+      within(screen.getByRole("region", { name: "Cash flow" })).getByText(
+        /Only the 1,000 most recent transactions are loaded/,
+      ),
     ).toBeInTheDocument();
   });
 

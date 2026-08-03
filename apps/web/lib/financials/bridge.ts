@@ -24,7 +24,11 @@
  */
 
 import { earliestDay, round, toNumber, utcDay, type TimeRange } from "@/lib/financials/day";
-import type { AccountRef, SnapshotInput } from "@/lib/financials/net-worth";
+import {
+  closingBalancesByDay,
+  type AccountRef,
+  type SnapshotInput,
+} from "@/lib/financials/net-worth";
 
 /**
  * What a row of brokerage activity turns out to be, or `null` for the rows that
@@ -105,7 +109,15 @@ const INTERNAL = /reinvest|you bought|you sold|\b(?:bought|sold|purchase|redempt
 /** Fees are unambiguous in a way the transfer rows are not, so they go first. */
 const FEE = /\bfees?\b|service charge|commission/i;
 
-const DIVIDEND = /\bdividends?\b|interest earned/i;
+/**
+ * Payouts from a holding — income, whichever word the fund uses for it.
+ *
+ * `cap gain` earns its place ahead of `WITHDRAWAL`: Fidelity's year-end wording
+ * is `LONG-TERM CAP GAIN DISTRIBUTION`, and `distribution` is also what a
+ * retirement account calls money going *out*. Checked here, the payout is income
+ * and the bare `DISTRIBUTION` below is still a withdrawal.
+ */
+const DIVIDEND = /\bdividends?\b|interest earned|\bcap(?:ital)? gain\b/i;
 
 /**
  * Cash leaving the account, checked before the inbound rule rather than after.
@@ -114,8 +126,13 @@ const DIVIDEND = /\bdividends?\b|interest earned/i;
  * funds the Roth: it is worded as a contribution because it is one — to the
  * *other* account. Matching on the word alone would count money leaving as
  * money arriving, and put double its value into the wrong side of the bridge.
+ *
+ * `sent` is here for the same reason in the opposite direction. `CONTRIBUTION`
+ * matches a bare `electronic funds transfer`, which is the only wording the feed
+ * has sent so far — but it is the inbound half of a pair, and the outbound half
+ * would otherwise be counted as money arriving.
  */
-const WITHDRAWAL = /transferred to|withdrawal|distribution/i;
+const WITHDRAWAL = /transferred to|withdrawal|distribution|\bsent\b|\bpaid out\b/i;
 
 const CONTRIBUTION = /contribution|transferred from|electronic funds transfer|deposit/i;
 
@@ -176,35 +193,6 @@ export function buildBridgePanels({
     );
 }
 
-/**
- * `accountId -> day -> closing balance`, the last reading of a day winning.
- *
- * The same rule net worth uses (ADR 0006), and for the same reason: accounts are
- * polled several times a day, and a bridge keyed on snapshots rather than days
- * would open on whichever poll happened to land first.
- */
-function closingBalancesByDay(
-  snapshots: readonly SnapshotInput[],
-): Map<string, Map<string, number>> {
-  const balances = new Map<string, Map<string, number>>();
-
-  for (const snapshot of [...snapshots].sort((a, b) =>
-    a.balanceDate.localeCompare(b.balanceDate),
-  )) {
-    const day = utcDay(snapshot.balanceDate);
-    const balance = toNumber(snapshot.balance);
-
-    if (day === null || balance === null) continue;
-
-    const perDay = balances.get(snapshot.accountId) ?? new Map<string, number>();
-
-    perDay.set(day, balance);
-    balances.set(snapshot.accountId, perDay);
-  }
-
-  return balances;
-}
-
 function bridgeFor(
   balances: Map<string, number>,
   transactions: readonly BridgeTransactionInput[],
@@ -219,10 +207,11 @@ function bridgeFor(
   // across it would claim the balance had stood still.
   if (days.length < 2) return null;
 
+  // Both days came out of `balances`'s own keys, so neither lookup can miss.
   const startDay = days[0];
   const endDay = days[days.length - 1];
-  const start = round(balances.get(startDay) ?? 0);
-  const end = round(balances.get(endDay) ?? 0);
+  const start = round(balances.get(startDay) as number);
+  const end = round(balances.get(endDay) as number);
   const delta = round(end - start);
 
   let contributions = 0;

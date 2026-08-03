@@ -6,6 +6,7 @@ import {
   type BridgeAccountRef,
   type BridgeTransactionInput,
 } from "@/lib/financials/bridge";
+import type { TimeRange } from "@/lib/financials/day";
 import type { SnapshotInput } from "@/lib/financials/net-worth";
 
 /**
@@ -73,7 +74,7 @@ const transactions = [
   transaction("t5", "2026-07-28", "ADVISORY FEE (Cash)", "-15.00"),
 ];
 
-function bridgeFor(period: "1M" | "3M" | "1Y" | "ALL" = "ALL") {
+function bridgeFor(period: TimeRange = "ALL") {
   const [panel] = buildBridgePanels({
     accounts: [account],
     transactions,
@@ -86,7 +87,7 @@ function bridgeFor(period: "1M" | "3M" | "1Y" | "ALL" = "ALL") {
 }
 
 /** `kind -> value`, which is what every assertion about the bridge is about. */
-function values(period: "1M" | "3M" | "1Y" | "ALL" = "ALL"): Record<string, number> {
+function values(period: TimeRange = "ALL"): Record<string, number> {
   const bridge = bridgeFor(period);
 
   if (!bridge) throw new Error("expected a bridge");
@@ -105,6 +106,26 @@ describe("tagging Fidelity activity", () => {
   it("recognises cash arriving, whichever way the feed words it", () => {
     expect(tagActivity("Electronic Funds Transfer Received (Cash)")).toBe("contribution");
     expect(tagActivity("CASH CONTRIBUTION CURRENT YEAR (Cash)")).toBe("contribution");
+  });
+
+  it("reads a capital gain distribution as income, not as money leaving", () => {
+    // Fidelity's standard year-end wording. `distribution` is the word an IRA
+    // uses for money going *out*, so a rule that saw it first would turn a
+    // payout into a withdrawal — a direction error, which is wrong by twice the
+    // amount rather than merely misfiled.
+    expect(tagActivity("LONG-TERM CAP GAIN DISTRIBUTION (Cash)")).toBe("dividend");
+    expect(tagActivity("SHORT-TERM CAPITAL GAIN DISTRIBUTION (Cash)")).toBe("dividend");
+  });
+
+  it("reads a retirement distribution as money leaving", () => {
+    expect(tagActivity("DISTRIBUTION PARTIAL (Cash)")).toBe("withdrawal");
+  });
+
+  it("tells an outbound electronic transfer from an inbound one", () => {
+    // The inbound wording is the only one the live feed has sent so far, and
+    // `electronic funds transfer` alone would make its opposite money coming in.
+    expect(tagActivity("Electronic Funds Transfer Sent (Cash)")).toBe("withdrawal");
+    expect(tagActivity("Electronic Funds Transfer Received (Cash)")).toBe("contribution");
   });
 
   it("recognises cash leaving, even though the row also says CONTRIBUTION", () => {
