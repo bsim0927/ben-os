@@ -16,7 +16,9 @@ and changing the database". The server runs without `--read-only`, so it can app
 
 The pre-ADR schema has been wiped (`20260802040000_wipe_pre_adr_schema.sql`) and the Financials
 tables built on the clean slate (`20260802043503_financials_schema.sql`). `public` holds
-`is_authorized()`, `set_updated_at()`, and the five `financials_*` tables. Schema conventions every
+`is_authorized()`, `set_updated_at()`, and the seven `financials_*` tables — the five from that
+migration plus `financials_security` and `financials_holding`
+(`20260803025805_financials_holding_schema.sql`, per ADR 0004). Schema conventions every
 table must follow are in `docs/adr/0001-baseline-supabase-schema-conventions.md`.
 
 > [!IMPORTANT]

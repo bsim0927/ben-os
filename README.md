@@ -66,11 +66,14 @@ finance prototype. That schema has been wiped by
 `supabase/migrations/20260802040000_wipe_pre_adr_schema.sql`, which is why
 [#20](https://github.com/bsim0927/ben-os/issues/20) specifies a redesign from scratch rather than a
 migration path. The Financials tables were the first thing built on the clean slate, so `public` now
-holds `is_authorized()`, `set_updated_at()`, and the five `financials_*` tables.
+holds `is_authorized()`, `set_updated_at()`, and the seven `financials_*` tables — the five the
+Financials schema migration created, plus `financials_security` and `financials_holding` for
+SnapTrade holdings.
 
 > [!IMPORTANT]
 > **Those tables hold real data.** A linked SimpleFIN account has been syncing Chase and Fidelity
-> since 2026-08-02. Destructive SQL now costs transaction history that cannot be re-fetched, because
+> since 2026-08-02, and SnapTrade has been syncing per-security holdings for the two Fidelity
+> accounts since 2026-08-03. Destructive SQL now costs transaction history that cannot be re-fetched, because
 > Bridge only serves a bounded recent window — prefer additive migrations.
 
 `20260802205533_financials_destructive_guards.sql` makes that harder to do by accident: `truncate` on
@@ -307,10 +310,12 @@ Two things about that job differ from the SimpleFIN one:
   every sync writes a fresh row per `(account, security)` and `as_of` separates them
   ([ADR 0004](docs/adr/0004-financials-holding-schema.md)). "Current holdings" is the latest `as_of`,
   not a table.
-- **`as_of` is SnapTrade's reading time, not ours.** That is what makes a retry free: two runs
-  between provider refreshes see the same timestamp, collide on
-  `(account_id, security_id, as_of)`, and write nothing. Stamping `now()` would slip past the
-  constraint and store the same numbers again.
+- **`as_of` is SnapTrade's reading time, not ours** — `data_freshness.as_of` off the response.
+  Stamping `now()` would slip past the `(account_id, security_id, as_of)` constraint and store the
+  same numbers again on every retry. How much idempotency this actually buys is an open question:
+  the first live sync suggests the timestamp tracks each read rather than the daily refresh, in
+  which case re-running the job appends a fresh set of snapshots rather than nothing. See
+  [ADR 0007](docs/adr/0007-snaptrade-holdings-sync.md) decision 3.
 
 Before anything is linked the route answers **200** with `{"status":"not-linked"}` — a resting
 state, not a failure. Until a human has been through the portal there is genuinely nothing to fetch,

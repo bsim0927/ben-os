@@ -55,10 +55,26 @@ restated here.
    is a property of the _reading_.
 
    The `/positions/all` response carries `data_freshness.as_of` — when the
-   brokerage data behind it was last true. On the free Daily plan that moves once
-   a day, so every run between refreshes sees the same value, collides on every
-   row, and writes nothing. It is also simply more truthful: `as_of` should say
-   when the position was real, not when this app got around to asking.
+   brokerage data behind it was last true. It is simply more truthful than the
+   run's clock: `as_of` should say when the position was real, not when this app
+   got around to asking.
+
+   **How far that actually buys idempotency is unresolved.** The intent was that
+   a Daily-plan connection refreshes once a day, so two runs between refreshes
+   would see the same value, collide on every row, and write nothing. The first
+   live sync does not support that: the two accounts, fetched about a second
+   apart, came back with `as_of` values a second apart — so the timestamp appears
+   to track each read rather than the last refresh. (The values being _different_
+   is what proves they came from the provider at all: the fallback hands every
+   account the same `now`, so a fallback would have made them identical.)
+
+   If that reading is right, a second sync on the same day appends a second set
+   of snapshots instead of nothing. That is not corruption — this table is
+   append-only by design (ADR 0004 decision 1) — but it means the unique key
+   defends against a _retry of the same request_, not against re-running the job.
+   Confirmable in one step: run the sync twice and see whether
+   `financials_holding` grows. Worth doing before anything depends on the
+   stronger guarantee.
 
    Where the provider reports no timestamp, the run's own instant is used and
    that idempotency is lost for those rows. A reading with an approximate
@@ -152,6 +168,14 @@ account`: SnapTrade has retired that endpoint, along with
 - `tax_lots` is gated behind SnapTrade's paid plans, so on Personal it is null
   essentially always. The nullable jsonb column ADR 0004 decision 4 chose
   handles that without a migration, which is exactly what it was chosen for.
+- Confirmed by the first live sync (15 holdings across the two Fidelity
+  accounts): every `instrument.kind` Fidelity returned — `stock`, `adr`, `etf`,
+  `mutualfund` — mapped to a real `security_type`, with nothing falling through
+  to `other`; `cost_basis`, `price` and `currency` were populated on every
+  position; and `tax_lots` was absent throughout, as expected on Personal. The
+  money-market fund (SPAXX) is held in both accounts and correctly resolved to a
+  single shared `financials_security` row typed `cash` via `cash_equivalent` —
+  the shared-security path ADR 0004 decision 2 exists for.
 - SnapTrade deprecates by returning `410 Gone` to accounts newer than a cutoff
   date while continuing to serve older ones. A published OpenAPI spec and a
   working integration elsewhere are therefore both weak evidence that an
