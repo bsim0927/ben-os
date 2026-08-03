@@ -36,6 +36,10 @@ A single financial account (checking, savings, credit card, brokerage, etc.) exp
 A point-in-time record of an account's balance as reported by a provider poll — the basis for net worth history, distinct from the account's current balance.
 _Avoid_: Balance (ambiguous between "the account's current balance" and "a historical snapshot")
 
+**Net worth**:
+The sum of every Account's balance at a point in time, derived from Balance snapshots at read time and never stored. Its unit is a UTC day: an account's last reading of a day wins, an account that missed a poll carries its previous balance forward, and a closed account contributes up to its last snapshot and no further. See [ADR 0006](docs/adr/0006-net-worth-derivation-and-charting.md).
+_Avoid_: Total balance — net worth is the sum across accounts, and "balance" already belongs to a single account.
+
 **Poll**:
 One scheduled call to a provider, covering every Connection at once — SimpleFIN answers `GET /accounts` for the whole subscription, not per institution. A poll succeeds or fails _per Connection_, so "the poll failed" is almost always wrong; one bank being broken is the normal case.
 _Avoid_: Sync, when the unit matters — a Sync is the job, a Poll is one run of it.

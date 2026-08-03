@@ -5,7 +5,7 @@ const { createClient } = vi.hoisted(() => ({ createClient: vi.fn() }));
 
 vi.mock("@/lib/supabase/server", () => ({ createClient }));
 
-import FinancialsRawData from "@/app/(modules)/financials/page";
+import FinancialsRawData from "@/app/(modules)/financials/raw/page";
 
 type TableResult = { data: unknown[] | null; error: { message: string } | null };
 
