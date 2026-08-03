@@ -30,7 +30,13 @@ type TableResult = { data: unknown[] | null; error: { message: string } | null }
 
 /** What the browser client was asked to write, in order. */
 type Write =
-  | { kind: "update"; table: string; values: Record<string, unknown>; id: unknown }
+  | {
+      kind: "update";
+      table: string;
+      values: Record<string, unknown>;
+      column: string;
+      id: unknown;
+    }
   | { kind: "upsert"; table: string; values: Record<string, unknown>; onConflict?: string };
 
 let writes: Write[] = [];
@@ -58,8 +64,11 @@ function stubBrowser() {
       return {
         update(values: Record<string, unknown>) {
           return {
-            eq(_column: string, id: unknown) {
-              writes.push({ kind: "update", table, values, id });
+            // The column is recorded, not discarded: filtering on anything but
+            // the primary key would recategorize a whole account, and a stub
+            // that ignored it would let that through.
+            eq(column: string, id: unknown) {
+              writes.push({ kind: "update", table, values, column, id });
 
               return Promise.resolve({ error: writeError });
             },
@@ -300,9 +309,35 @@ describe("the flow stats", () => {
 
     expect(
       within(panel("CHASE COLLEGE (8923)")).getByText(
-        "Net flow over 30 days, ending at +$1,550.00",
+        "Net flow over 1 month, ending at +$1,550.00",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("says when the page hit its row bound, rather than quietly understating a period", async () => {
+    // The bound is across every account at once, so a busy month reaches it long
+    // before any single panel looks short — and an expenses figure that is too
+    // small is the one number on this page nobody would think to question.
+    seeded({
+      financials_transaction: {
+        data: Array.from({ length: 1000 }, (_, index) =>
+          transaction(`bulk-${index}`, "chase", "2026-07-20", "COFFEE", "-3.00"),
+        ),
+        error: null,
+      },
+    });
+    await renderPage();
+
+    expect(
+      screen.getByText(/Only the 1,000 most recent transactions are loaded/),
+    ).toBeInTheDocument();
+  });
+
+  it("stays quiet about the bound when everything fits inside it", async () => {
+    seeded();
+    await renderPage();
+
+    expect(screen.queryByText(/most recent transactions are loaded/)).not.toBeInTheDocument();
   });
 
   it("says the period is empty rather than printing three zeroes", async () => {
@@ -310,7 +345,7 @@ describe("the flow stats", () => {
     await renderPage();
 
     expect(
-      within(panel("CHASE COLLEGE (8923)")).getByText("No transactions in the last 30 days."),
+      within(panel("CHASE COLLEGE (8923)")).getByText("No transactions in the last 1 month."),
     ).toBeInTheDocument();
     expect(within(panel("CHASE COLLEGE (8923)")).queryByText("$0.00")).not.toBeInTheDocument();
   });
@@ -427,6 +462,7 @@ describe("categorizing a transaction", () => {
       kind: "update",
       table: "financials_transaction",
       values: { category_id: "groceries" },
+      column: "id",
       id: "t5",
     });
 
@@ -462,6 +498,7 @@ describe("categorizing a transaction", () => {
         kind: "update",
         table: "financials_transaction",
         values: { category_id: "cat-coffee" },
+        column: "id",
         id: "t5",
       },
     ]);
@@ -500,7 +537,7 @@ describe("categorizing a transaction", () => {
     );
 
     await waitFor(() => expect(writes).toHaveLength(1));
-    expect(writes[0]).toMatchObject({ values: { category_id: null }, id: "t2" });
+    expect(writes[0]).toMatchObject({ values: { category_id: null }, column: "id", id: "t2" });
     expect(categoryButton("RENT JULY")).toHaveTextContent("Uncategorized");
   });
 

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { AreaChart } from "@/components/area-chart";
-import { MicroLabel } from "@/components/console";
+import { MicroLabel, SegmentedToggle } from "@/components/console";
 import {
   formatAmount,
   formatCompactAmount,
@@ -12,16 +12,19 @@ import {
   formatSignedAmount,
 } from "@/lib/financials/format";
 import {
-  changeOver,
   dayToTimestamp,
-  equationFor,
-  NET_WORTH_RANGES,
+  rangeLabel,
   timestampToDay,
+  TIME_RANGES,
+  type TimeRange,
+} from "@/lib/financials/day";
+import {
+  changeOver,
+  equationFor,
   windowSeries,
   type AccountRef,
   type NetWorthEquation,
   type NetWorthPoint,
-  type NetWorthRange,
 } from "@/lib/financials/net-worth";
 
 /**
@@ -49,7 +52,7 @@ export type NetWorthHeroProps = {
 };
 
 export function NetWorthHero({ accounts, series, today, currency }: NetWorthHeroProps) {
-  const [range, setRange] = useState<NetWorthRange>("3M");
+  const [range, setRange] = useState<TimeRange>("3M");
 
   const windowed = useMemo(
     () => windowSeries(series, range, new Date(today)),
@@ -103,7 +106,12 @@ export function NetWorthHero({ accounts, series, today, currency }: NetWorthHero
           </p>
         </div>
 
-        <RangeToggle range={range} onChange={setRange} />
+        <SegmentedToggle
+          label="Chart range"
+          options={TIME_RANGES}
+          selected={range}
+          onChange={setRange}
+        />
       </header>
 
       <div className="border-hairline bg-panel rounded-md border p-4">
@@ -147,36 +155,6 @@ function ChartNotice({ headline, detail }: { headline: string; detail: string })
     <div className="flex flex-col items-center justify-center gap-2 px-6 py-14 text-center">
       <p className="text-ink text-[13px]">{headline}</p>
       <p className="text-muted max-w-[46ch] text-[12px] leading-relaxed">{detail}</p>
-    </div>
-  );
-}
-
-function RangeToggle({
-  range,
-  onChange,
-}: {
-  range: NetWorthRange;
-  onChange: (next: NetWorthRange) => void;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label="Chart range"
-      className="border-hairline bg-panel-2 flex overflow-hidden rounded-md border"
-    >
-      {NET_WORTH_RANGES.map((option) => (
-        <button
-          key={option}
-          type="button"
-          aria-pressed={option === range}
-          onClick={() => onChange(option)}
-          className={`border-hairline px-3 py-1.5 text-[12px] tracking-[0.04em] not-first:border-l ${
-            option === range ? "bg-accent/15 text-accent" : "text-muted hover:text-ink"
-          }`}
-        >
-          {option}
-        </button>
-      ))}
     </div>
   );
 }
@@ -247,8 +225,4 @@ function Term({
 
 function Operator({ children }: { children: React.ReactNode }) {
   return <span className="text-muted pt-4 text-[15px]">{children}</span>;
-}
-
-function rangeLabel(range: NetWorthRange): string {
-  return { "1M": "1 month", "3M": "3 months", "1Y": "1 year", ALL: "all time" }[range];
 }

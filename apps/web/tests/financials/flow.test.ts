@@ -11,7 +11,7 @@ import {
  * The flow summary a depository account's panel is drawn from.
  *
  * All of it is arithmetic over transactions, so it is asserted here without a
- * DOM; the page-level test in `overview-page.test.tsx` covers the claim these
+ * DOM; the page-level test in `flow-panels-page.test.tsx` covers the claim these
  * figures and the rendered panel are the same thing.
  */
 

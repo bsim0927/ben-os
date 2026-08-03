@@ -51,6 +51,14 @@ The date range a poll asks for. Steady state is a 5-day overlap rather than "sin
 A user-assigned label on a transaction. SimpleFIN provides no native categorization, so this is entirely app-owned.
 _Avoid_: Tag — categories are single-valued per transaction in v1, not a many-valued tagging system.
 
+**Uncategorized**:
+Not a Category — the absence of one (`financials_transaction.category_id is null`). It gets a bar in the flow breakdown and an entry in the picker anyway, because spend nobody has labelled is still spend, and a breakdown that omitted it would not add up to the expenses figure above it.
+_Avoid_: Other, Misc — both read as a category someone chose, which is the one thing this isn't.
+
+**Flow**:
+The income/expenses/net framing a depository Account gets, derived from its transactions over a range: what came in, what went out, and where it went. The counterpart to the balance-bridge framing an investment Account gets, and the reason `financials_account.kind` is a column at all — a chart of a credit card's balance says it is at −$2,309, and only flow says why.
+_Avoid_: Cash flow statement (an accounting artefact with a fixed shape this isn't), spending (only half of it — flow includes income), day-to-day account (the thing is an Account with `kind = 'depository'`; it doesn't need a second name).
+
 **Security**:
 A tradable financial instrument (stock, ETF, mutual fund, etc.), identified by ticker symbol. Provider-agnostic reference data, shared across every Holding that references it.
 _Avoid_: Ticker, symbol, instrument — "Security" is the entity; a ticker/symbol is one of its fields.

@@ -12,7 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 
 /**
  * The Financials module's front door: net worth as a trend, the equation saying
- * which accounts it is the sum of, and a flow panel per day-to-day account.
+ * which accounts it is the sum of, and a flow panel per depository account.
  *
  * Everything shown here is derived at read time — net worth from
  * `financials_balance_snapshot`, flow from `financials_transaction` — so there
@@ -33,6 +33,11 @@ const SNAPSHOT_LIMIT = 1000;
  * Newest-first for the same reason, and generous against what the tables can
  * actually hold: Bridge serves a bounded recent window, so the row count grows
  * only as fast as the sync accumulates it (ADR 0005).
+ *
+ * The bound is across *all* accounts, so it can be reached long before any one
+ * panel looks short. Hitting it is passed down rather than swallowed — a period
+ * quietly missing its oldest transactions would understate expenses, and an
+ * understated expense figure is the one number here nobody would question.
  */
 const TRANSACTION_LIMIT = 1000;
 
@@ -107,7 +112,7 @@ export default async function FinancialsOverview() {
   }));
 
   // `kind` is read strictly, unlike `status`: the flow framing is only right for
-  // an account someone has said is day-to-day (ADR 0003 — no provider signals
+  // an account someone has said is depository (ADR 0003 — no provider signals
   // it), and drawing income and expenses for a brokerage would be worse than
   // leaving it to the balance bridge that suits it.
   const flowAccounts: FlowAccountRef[] = (accounts.data ?? [])
@@ -159,6 +164,7 @@ export default async function FinancialsOverview() {
         transactions={flowTransactions}
         categories={categoryRefs}
         today={new Date().toISOString()}
+        truncated={(transactions.data ?? []).length >= TRANSACTION_LIMIT}
       />
 
       <p className="border-hairline text-muted border-t pt-3 text-[13px]">

@@ -1,8 +1,6 @@
-import type { AccountStatus } from "@/lib/financials/net-worth";
-
 /**
- * Cash flow for a depository account: what came in, what went out, where it
- * went, and the transactions behind it.
+ * Flow for a depository Account: what came in, what went out, where it went, and
+ * the transactions behind it.
  *
  * Flow is the framing a checking account earns and a brokerage account doesn't
  * (spec #24–27, ADR 0003's `kind`): a balance chart says a card is at −$2,309,
@@ -16,26 +14,14 @@ import type { AccountStatus } from "@/lib/financials/net-worth";
  * magnitudes, because a bar chart of negative numbers reads as a bug.
  */
 
-export type FlowPeriod = "1M" | "3M" | "1Y" | "ALL";
-
-export const FLOW_PERIODS: readonly FlowPeriod[] = ["1M", "3M", "1Y", "ALL"];
-
-/** Plain day counts, matching the net-worth ranges the overview already speaks in. */
-const PERIOD_DAYS: Record<Exclude<FlowPeriod, "ALL">, number> = {
-  "1M": 30,
-  "3M": 90,
-  "1Y": 365,
-};
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
+import { earliestDay, round, toNumber, utcDay, type TimeRange } from "@/lib/financials/day";
+import type { AccountRef } from "@/lib/financials/net-worth";
 
 /** What an uncategorized bar and an uncategorized picker entry both say. */
 export const UNCATEGORIZED_LABEL = "Uncategorized";
 
-export type FlowAccountRef = {
-  id: string;
-  name: string;
-  status: AccountStatus;
+/** The net worth account, plus the one thing a per-account figure needs that a summed one doesn't. */
+export type FlowAccountRef = AccountRef & {
   /** Per account, not per page: a rewards-points account must not borrow a `$`. */
   currency?: string;
 };
@@ -106,7 +92,7 @@ export type BuildFlowPanelsInput = {
   accounts: readonly FlowAccountRef[];
   transactions: readonly FlowTransactionInput[];
   categories: readonly CategoryRef[];
-  period: FlowPeriod;
+  period: TimeRange;
   /**
    * Required rather than defaulted, for the reason `windowSeries` requires it:
    * the caller is a client component, and reading the browser's clock here would
@@ -260,30 +246,4 @@ function trendFor(transactions: readonly FlowTransaction[]): FlowTrendPoint[] {
  */
 function newestFirst(a: FlowTransaction, b: FlowTransaction): number {
   return b.posted.localeCompare(a.posted) || a.id.localeCompare(b.id);
-}
-
-/** The first day the period admits, or `null` for `ALL`. */
-function earliestDay(period: FlowPeriod, now: Date): string | null {
-  if (period === "ALL") return null;
-
-  return utcDay(new Date(now.getTime() - PERIOD_DAYS[period] * MS_PER_DAY).toISOString());
-}
-
-function utcDay(value: string): string | null {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return null;
-
-  return date.toISOString().slice(0, 10);
-}
-
-function toNumber(value: number | string): number | null {
-  const numeric = typeof value === "number" ? value : Number.parseFloat(value);
-
-  return Number.isFinite(numeric) ? numeric : null;
-}
-
-/** Cents, not floats — the reason `net-worth` rounds, for the same sums. */
-function round(value: number): number {
-  return Math.round(value * 100) / 100;
 }

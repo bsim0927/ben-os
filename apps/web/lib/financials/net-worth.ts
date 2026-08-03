@@ -12,20 +12,13 @@
  * The unit is a UTC day, not a snapshot. Accounts are polled together but report
  * their own `balance-date`, so an instant-by-instant series would step twice a
  * day — once for each institution — and read as volatility that isn't there.
+ *
+ * That day, and the ranges measured in it, belong to `lib/financials/day.ts` —
+ * the flow panels key off the same unit, and one definition is what keeps them
+ * from drifting.
  */
 
-export type NetWorthRange = "1M" | "3M" | "1Y" | "ALL";
-
-export const NET_WORTH_RANGES: readonly NetWorthRange[] = ["1M", "3M", "1Y", "ALL"];
-
-/** Plain day counts rather than calendar months: predictable, and the chart's x-axis is days. */
-const RANGE_DAYS: Record<Exclude<NetWorthRange, "ALL">, number> = {
-  "1M": 30,
-  "3M": 90,
-  "1Y": 365,
-};
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
+import { earliestDay, round, toNumber, utcDay, type TimeRange } from "@/lib/financials/day";
 
 /** The two states ADR 0002 gives an account. Closure is soft, and it is the user's to record. */
 export type AccountStatus = "active" | "closed";
@@ -127,21 +120,13 @@ export function buildNetWorthSeries({
   });
 }
 
-/**
- * The slice of the series a range toggle shows. `ALL` is every point there is.
- *
- * `now` is required rather than defaulted: the caller is a client component, and
- * a default `new Date()` here would read the browser's clock and disagree with
- * the server's render — a hydration mismatch waiting for midnight (ADR 0006).
- */
+/** The slice of the series a range toggle shows. `ALL` is every point there is. */
 export function windowSeries(
   series: readonly NetWorthPoint[],
-  range: NetWorthRange,
+  range: TimeRange,
   now: Date,
 ): NetWorthPoint[] {
-  if (range === "ALL") return [...series];
-
-  const earliest = utcDay(new Date(now.getTime() - RANGE_DAYS[range] * MS_PER_DAY).toISOString());
+  const earliest = earliestDay(range, now);
 
   if (earliest === null) return [...series];
 
@@ -203,42 +188,4 @@ export function changeOver(points: readonly NetWorthPoint[]): {
 
 function byBalanceDate(a: SnapshotInput, b: SnapshotInput): number {
   return a.balanceDate.localeCompare(b.balanceDate);
-}
-
-/**
- * The `YYYY-MM-DD` day a point is keyed by, and the two conversions to and from
- * it, live together here — the day is the series' unit, and letting each caller
- * roll its own `slice(0, 10)` is how the representation drifts.
- *
- * UTC throughout, matching the sync's own timestamps. Reinterpreting a
- * `balance-date` in the viewer's zone would shuffle snapshots across the day
- * boundary and move points on the chart for no reason.
- */
-function utcDay(value: string): string | null {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return null;
-
-  return date.toISOString().slice(0, 10);
-}
-
-/** Milliseconds at the day's UTC start — what a time-spaced x-axis plots against. */
-export function dayToTimestamp(day: string): number {
-  return new Date(`${day}T00:00:00Z`).getTime();
-}
-
-/** The inverse, for reading a day back off an x coordinate. */
-export function timestampToDay(timestamp: number): string {
-  return new Date(timestamp).toISOString().slice(0, 10);
-}
-
-function toNumber(value: number | string): number | null {
-  const numeric = typeof value === "number" ? value : Number.parseFloat(value);
-
-  return Number.isFinite(numeric) ? numeric : null;
-}
-
-/** Cents, not floats: summing two-decimal balances otherwise yields 100000.00000000001. */
-function round(value: number): number {
-  return Math.round(value * 100) / 100;
 }

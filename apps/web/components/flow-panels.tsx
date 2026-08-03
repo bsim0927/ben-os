@@ -2,26 +2,24 @@
 
 import { useMemo, useState } from "react";
 
-import { MicroLabel } from "@/components/console";
+import { MicroLabel, SegmentedToggle } from "@/components/console";
 import { Sparkline } from "@/components/sparkline";
 import { assignCategory, createCategory } from "@/lib/financials/categorize";
 import { messageFor } from "@/lib/errors";
 import { formatAmount, formatDay, formatSignedAmount } from "@/lib/financials/format";
+import { dayToTimestamp, rangeLabel, TIME_RANGES, type TimeRange } from "@/lib/financials/day";
 import {
   buildFlowPanels,
-  FLOW_PERIODS,
   UNCATEGORIZED_LABEL,
   type CategoryRef,
   type FlowAccountRef,
   type FlowPanel,
-  type FlowPeriod,
   type FlowTransaction,
   type FlowTransactionInput,
 } from "@/lib/financials/flow";
-import { dayToTimestamp } from "@/lib/financials/net-worth";
 
 /**
- * The flow panels: one per day-to-day account, saying what came in, what went
+ * The flow panels: one per depository Account, saying what came in, what went
  * out, where it went, and letting a transaction be put in a category.
  *
  * A client component because categorizing is the module's only write, and it has
@@ -38,16 +36,24 @@ import { dayToTimestamp } from "@/lib/financials/net-worth";
 const VISIBLE_TRANSACTIONS = 12;
 
 export type FlowPanelsProps = {
-  /** Day-to-day accounts only — a brokerage gets the balance bridge, not this. */
+  /** Depository accounts only — a brokerage gets the balance bridge, not this. */
   accounts: readonly FlowAccountRef[];
   transactions: readonly FlowTransactionInput[];
   categories: readonly CategoryRef[];
   /** ISO timestamp the periods are measured back from. */
   today: string;
+  /** The page hit its row bound, so the widest periods may not be whole. */
+  truncated?: boolean;
 };
 
-export function FlowPanels({ accounts, transactions, categories: seeded, today }: FlowPanelsProps) {
-  const [period, setPeriod] = useState<FlowPeriod>("1M");
+export function FlowPanels({
+  accounts,
+  transactions,
+  categories: seeded,
+  today,
+  truncated = false,
+}: FlowPanelsProps) {
+  const [period, setPeriod] = useState<TimeRange>("1M");
   // Both of these start from the server's rows and then run ahead of them: a
   // category named here, or a transaction moved into one, has to show
   // immediately rather than after a refresh that nothing has asked for.
@@ -70,7 +76,7 @@ export function FlowPanels({ accounts, transactions, categories: seeded, today }
     [accounts, rows, categories, period, today],
   );
 
-  // No panels, no section. An active day-to-day account always gets one — an
+  // No panels, no section. An active depository account always gets one — an
   // empty period is a state the panel itself has words for — so this is only
   // ever "there is nothing here that flow is the right framing for", and a box
   // saying that below the net worth chart would be noise, not information.
@@ -129,11 +135,27 @@ export function FlowPanels({ accounts, transactions, categories: seeded, today }
         <div>
           <MicroLabel as="h2">Cash flow</MicroLabel>
           <p className="text-muted mt-1 text-[13px]">
-            What moved through each day-to-day account, and where it went.
+            Money in and out of each depository account, and where it went.
           </p>
+          {/*
+           * Said out loud rather than left to be inferred from a total that
+           * looks plausible: the row bound is across every account at once, so
+           * it bites a busy period long before any single panel looks short.
+           */}
+          {truncated ? (
+            <p className="text-muted mt-1 text-[12px]">
+              Only the {transactions.length.toLocaleString("en-US")} most recent transactions are
+              loaded — the longer periods may be incomplete.
+            </p>
+          ) : null}
         </div>
 
-        <PeriodToggle period={period} onChange={setPeriod} />
+        <SegmentedToggle
+          label="Flow period"
+          options={TIME_RANGES}
+          selected={period}
+          onChange={setPeriod}
+        />
       </header>
 
       {failure ? (
@@ -171,7 +193,7 @@ function AccountPanel({
 }: {
   panel: FlowPanel;
   categories: readonly CategoryRef[];
-  period: FlowPeriod;
+  period: TimeRange;
   openPicker: string | null;
   onOpenPicker: (transactionId: string | null) => void;
   onPick: (transaction: FlowTransaction, categoryId: string | null) => void;
@@ -194,7 +216,7 @@ function AccountPanel({
          */}
         <Sparkline
           data={trend.map((point) => ({ x: dayToTimestamp(point.date), y: point.total }))}
-          label={`Net flow over ${periodLabel(period)}, ending at ${formatSignedAmount(stats.net, currency)}`}
+          label={`Net flow over ${rangeLabel(period)}, ending at ${formatSignedAmount(stats.net, currency)}`}
         />
       </header>
 
@@ -204,7 +226,7 @@ function AccountPanel({
         <p className="text-muted px-4 py-10 text-center text-[13px]">
           {period === "ALL"
             ? "No transactions on record for this account."
-            : `No transactions in the last ${periodLabel(period)}.`}
+            : `No transactions in the last ${rangeLabel(period)}.`}
         </p>
       ) : (
         <>
@@ -523,38 +545,4 @@ function CategoryPicker({
       ) : null}
     </span>
   );
-}
-
-function PeriodToggle({
-  period,
-  onChange,
-}: {
-  period: FlowPeriod;
-  onChange: (next: FlowPeriod) => void;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label="Flow period"
-      className="border-hairline bg-panel-2 flex overflow-hidden rounded-md border"
-    >
-      {FLOW_PERIODS.map((option) => (
-        <button
-          key={option}
-          type="button"
-          aria-pressed={option === period}
-          onClick={() => onChange(option)}
-          className={`border-hairline px-3 py-1.5 text-[12px] tracking-[0.04em] not-first:border-l ${
-            option === period ? "bg-accent/15 text-accent" : "text-muted hover:text-ink"
-          }`}
-        >
-          {option}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function periodLabel(period: FlowPeriod): string {
-  return { "1M": "30 days", "3M": "3 months", "1Y": "1 year", ALL: "all time" }[period];
 }
