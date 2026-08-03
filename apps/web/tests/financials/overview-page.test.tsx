@@ -39,8 +39,20 @@ function stubSupabase(results: Record<string, TableResult>) {
 }
 
 const accounts = [
-  { id: "chase", name: "CHASE COLLEGE (8923)", status: "active", currency: "USD" },
-  { id: "fidelity", name: "Individual (5008)", status: "active", currency: "USD" },
+  {
+    id: "chase",
+    name: "CHASE COLLEGE (8923)",
+    kind: "depository",
+    status: "active",
+    currency: "USD",
+  },
+  {
+    id: "fidelity",
+    name: "Individual (5008)",
+    kind: "investment",
+    status: "active",
+    currency: "USD",
+  },
 ];
 
 function snapshot(accountId: string, day: string, balance: string) {
@@ -96,8 +108,18 @@ function equationTerms(): [string, string][] {
     .map((heading) => [heading.textContent ?? "", heading.nextElementSibling?.textContent ?? ""]);
 }
 
+/**
+ * Scoped to the chart's own toggle: the flow panels below carry a period toggle
+ * spelled the same way, and an unscoped `1M` would be ambiguous between them.
+ */
+function rangeButton(range: string): HTMLElement {
+  return within(screen.getByRole("group", { name: "Chart range" })).getByRole("button", {
+    name: range,
+  });
+}
+
 function selectRange(range: string) {
-  fireEvent.click(screen.getByRole("button", { name: range }));
+  fireEvent.click(rangeButton(range));
 }
 
 beforeEach(() => {
@@ -115,7 +137,7 @@ describe("the financials overview", () => {
     seeded();
     await renderPage();
 
-    expect(screen.getByRole("button", { name: "3M" })).toHaveAttribute("aria-pressed", "true");
+    expect(rangeButton("3M")).toHaveAttribute("aria-pressed", "true");
     expect(chartData()).toEqual([
       ["1 Jun 2026", "$30,000.00"],
       ["20 Jul 2026", "$40,000.00"],
@@ -199,8 +221,20 @@ describe("the financials overview", () => {
         // the order the real page puts them in.
         data: [
           ...accounts,
-          { id: "roth", name: "ROTH IRA (3715)", status: "active", currency: "USD" },
-          { id: "card", name: "United Explorer (3887)", status: "active", currency: "USD" },
+          {
+            id: "roth",
+            name: "ROTH IRA (3715)",
+            kind: "investment",
+            status: "active",
+            currency: "USD",
+          },
+          {
+            id: "card",
+            name: "United Explorer (3887)",
+            kind: "depository",
+            status: "active",
+            currency: "USD",
+          },
         ],
         error: null,
       },

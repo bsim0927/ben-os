@@ -1,6 +1,8 @@
 import Link from "next/link";
 
+import { FlowPanels } from "@/components/flow-panels";
 import { NetWorthHero } from "@/components/net-worth-hero";
+import type { CategoryRef, FlowAccountRef, FlowTransactionInput } from "@/lib/financials/flow";
 import {
   buildNetWorthSeries,
   type AccountRef,
@@ -9,13 +11,13 @@ import {
 import { createClient } from "@/lib/supabase/server";
 
 /**
- * The Financials module's front door: net worth as a trend, and the equation
- * saying which accounts it is the sum of.
+ * The Financials module's front door: net worth as a trend, the equation saying
+ * which accounts it is the sum of, and a flow panel per depository account.
  *
- * Everything shown here is derived from `financials_balance_snapshot` at read
- * time — there is no stored net-worth figure to go stale, and the chart and the
- * equation strip are two renderings of one series rather than two calculations
- * that have to be kept in step.
+ * Everything shown here is derived at read time — net worth from
+ * `financials_balance_snapshot`, flow from `financials_transaction` — so there
+ * is no stored figure to go stale, and each surface's several renderings come
+ * from one series rather than from calculations that have to be kept in step.
  */
 
 export const dynamic = "force-dynamic";
@@ -27,9 +29,22 @@ export const dynamic = "force-dynamic";
  */
 const SNAPSHOT_LIMIT = 1000;
 
+/**
+ * Newest-first for the same reason, and generous against what the tables can
+ * actually hold: Bridge serves a bounded recent window, so the row count grows
+ * only as fast as the sync accumulates it (ADR 0005).
+ *
+ * The bound is across *all* accounts, so it can be reached long before any one
+ * panel looks short. Hitting it is passed down rather than swallowed — a period
+ * quietly missing its oldest transactions would understate expenses, and an
+ * understated expense figure is the one number here nobody would question.
+ */
+const TRANSACTION_LIMIT = 1000;
+
 type AccountRow = {
   id: string;
   name: string;
+  kind: string;
   status: string;
   currency: string;
 };
@@ -40,13 +55,30 @@ type SnapshotRow = {
   balance_date: string;
 };
 
+type TransactionRow = {
+  id: string;
+  account_id: string;
+  posted: string;
+  description: string;
+  amount: number | string;
+  pending: boolean;
+  category_id: string | null;
+};
+
+type CategoryRow = {
+  id: string;
+  name: string;
+};
+
 export default async function FinancialsOverview() {
+  // Four independent reads, issued together — the page is as slow as the
+  // slowest, not as slow as their sum.
   const supabase = await createClient();
 
-  const [accounts, snapshots] = await Promise.all([
+  const [accounts, snapshots, transactions, categories] = await Promise.all([
     supabase
       .from("financials_account")
-      .select("id, name, status, currency")
+      .select("id, name, kind, status, currency")
       .order("name")
       .returns<AccountRow[]>(),
     supabase
@@ -55,9 +87,19 @@ export default async function FinancialsOverview() {
       .order("balance_date", { ascending: false })
       .limit(SNAPSHOT_LIMIT)
       .returns<SnapshotRow[]>(),
+    // Not filtered to the flow accounts: the accounts are only known once that
+    // first query lands, and waiting for it would cost a round trip to save
+    // sending the handful of rows a brokerage posts.
+    supabase
+      .from("financials_transaction")
+      .select("id, account_id, posted, description, amount, pending, category_id")
+      .order("posted", { ascending: false })
+      .limit(TRANSACTION_LIMIT)
+      .returns<TransactionRow[]>(),
+    supabase.from("financials_category").select("id, name").order("name").returns<CategoryRow[]>(),
   ]);
 
-  const error = accounts.error ?? snapshots.error;
+  const error = accounts.error ?? snapshots.error ?? transactions.error ?? categories.error;
 
   const accountRefs: AccountRef[] = (accounts.data ?? []).map((row) => ({
     id: row.id,
@@ -68,6 +110,31 @@ export default async function FinancialsOverview() {
     // is the worse of the two ways to be wrong.
     status: row.status === "closed" ? "closed" : "active",
   }));
+
+  // `kind` is read strictly, unlike `status`: the flow framing is only right for
+  // an account someone has said is depository (ADR 0003 — no provider signals
+  // it), and drawing income and expenses for a brokerage would be worse than
+  // leaving it to the balance bridge that suits it.
+  const flowAccounts: FlowAccountRef[] = (accounts.data ?? [])
+    .filter((row) => row.kind === "depository")
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      status: row.status === "closed" ? "closed" : "active",
+      currency: row.currency,
+    }));
+
+  const flowTransactions: FlowTransactionInput[] = (transactions.data ?? []).map((row) => ({
+    id: row.id,
+    accountId: row.account_id,
+    posted: row.posted,
+    description: row.description,
+    amount: row.amount,
+    pending: row.pending,
+    categoryId: row.category_id,
+  }));
+
+  const categoryRefs: CategoryRef[] = categories.data ?? [];
 
   const snapshotInputs: SnapshotInput[] = (snapshots.data ?? []).map((row) => ({
     accountId: row.account_id,
@@ -90,6 +157,14 @@ export default async function FinancialsOverview() {
         series={series}
         today={new Date().toISOString()}
         currency={sharedCurrency(accounts.data ?? [])}
+      />
+
+      <FlowPanels
+        accounts={flowAccounts}
+        transactions={flowTransactions}
+        categories={categoryRefs}
+        today={new Date().toISOString()}
+        truncated={(transactions.data ?? []).length >= TRANSACTION_LIMIT}
       />
 
       <p className="border-hairline text-muted border-t pt-3 text-[13px]">

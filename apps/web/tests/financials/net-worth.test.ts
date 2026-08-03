@@ -4,11 +4,11 @@ import {
   buildNetWorthSeries,
   changeOver,
   equationFor,
-  NET_WORTH_RANGES,
   windowSeries,
   type AccountRef,
   type SnapshotInput,
 } from "@/lib/financials/net-worth";
+import { TIME_RANGES } from "@/lib/financials/day";
 
 const chase: AccountRef = { id: "chase", name: "Chase", status: "active" };
 const fidelity: AccountRef = { id: "fidelity", name: "Fidelity", status: "active" };
@@ -188,7 +188,7 @@ describe("windowSeries", () => {
   });
 
   it("offers the four ranges the overview toggles between", () => {
-    expect(NET_WORTH_RANGES).toEqual(["1M", "3M", "1Y", "ALL"]);
+    expect(TIME_RANGES).toEqual(["1M", "3M", "1Y", "ALL"]);
   });
 });
 
