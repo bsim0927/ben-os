@@ -4,9 +4,10 @@
 
 [ADR 0004](./0004-financials-holding-schema.md) settled the shape of
 `financials_security` and `financials_holding`. Building the sync that fills them
-([#27](https://github.com/bsim0927/ben-os/issues/27)) turned up two things it did
-not settle, both of which change what the tables mean rather than only how the
-job runs. [ADR 0005](./0005-financials-sync-execution-model.md) covers everything
+([#27](https://github.com/bsim0927/ben-os/issues/27)) turned up several things it
+did not settle — how a SnapTrade account is tied to one this app already has,
+what `as_of` actually measures, and which endpoint still serves holdings at all.
+Each changes what the tables mean rather than only how the job runs. [ADR 0005](./0005-financials-sync-execution-model.md) covers everything
 the two syncs share — RLS, transaction scoping, the cron secret — and is not
 restated here.
 
@@ -53,24 +54,24 @@ restated here.
    writes a second snapshot of identical numbers. The key only works if `as_of`
    is a property of the _reading_.
 
-   SnapTrade's `sync_status.holdings.last_successful_sync` is exactly that: when
-   it last refreshed the connection from the brokerage. On the free Daily plan
-   that moves once a day, so every run between refreshes sees the same value,
-   collides on every row, and writes nothing. It is also simply more truthful —
-   `as_of` should say when the position was real, not when this app got around to
-   asking.
+   The `/positions/all` response carries `data_freshness.as_of` — when the
+   brokerage data behind it was last true. On the free Daily plan that moves once
+   a day, so every run between refreshes sees the same value, collides on every
+   row, and writes nothing. It is also simply more truthful: `as_of` should say
+   when the position was real, not when this app got around to asking.
 
    Where the provider reports no timestamp, the run's own instant is used and
    that idempotency is lost for those rows. A reading with an approximate
    timestamp is worth more than no reading.
 
    Which of the two happened is **reported** per account (`asOfSource`), and
-   that is not decoration. The field name comes from the generated SDK's
-   typings, not from prose, and every fixture in the suite is hand-written to
-   match the code — so if SnapTrade ever renames or drops it, `as_of` would
+   that is not decoration. Every fixture in the suite is hand-written to match
+   the code — so if SnapTrade ever renames or drops the field, `as_of` would
    quietly revert to this app's clock, idempotency would stop working, and the
    tests would all still pass. Reporting the source puts that failure in the
-   cron response body, where the first real run shows it.
+   cron response body, where the first real run shows it. This is not
+   hypothetical: the endpoint this sync was first built against was withdrawn
+   between the code being written and its first live run (decision 6).
 
 4. **The unit of work is an account, not a connection.** SnapTrade serves
    holdings per account, so a broken account is one failed HTTP call among
@@ -79,7 +80,26 @@ restated here.
    ADR 0005 decision 3's reasoning, applied one level down, because that is where
    the failures land here.
 
-5. **The client is hand-written, not `snaptrade-typescript-sdk`.** Same call
+5. **Holdings come from `/accounts/{id}/positions/all` (v2), not `/holdings`.**
+
+   The first implementation used `GET /accounts/{id}/holdings`, which the SDK
+   still exposes and the public OpenAPI spec still documents. It answered the
+   first live run with `410 Gone — This endpoint is no longer available for your
+account`: SnapTrade has retired that endpoint, along with
+   `/accounts/{id}/positions` and the aggregate `/holdings`, for accounts created
+   after April 2026. Only the generated SDK typings record this, as `@deprecated`
+   markers, and only `getAllAccountPositions` is unmarked.
+
+   The replacement is better on every axis that matters here. One call covers
+   equities, funds, crypto, options and futures. Its numbers are **decimal
+   strings** rather than JSON numbers, so a fractional share count reaches
+   `numeric` without passing through a double — the precision caveat this ADR
+   used to carry is simply gone. The reading's timestamp arrives with the
+   response instead of being dug out of a separate account lookup. And
+   `instrument.kind` is a documented discriminator, replacing the undocumented
+   two-letter `type.code` the security-type mapping previously had to guess at.
+
+6. **The client is hand-written, not `snaptrade-typescript-sdk`.** Same call
    `simplefin.ts` makes: three endpoints, and a `fetch`-shaped client is one the
    tests can stub at the wire. The exception is request signing, which is not
    small enough to guess — so `signaturePayload` is a deliberate
@@ -124,11 +144,16 @@ restated here.
   and SnapTrade publishes no exhaustive list of those codes. Unmapped codes land
   as `other` with the raw code kept in `financials_security.extra`, so a wrong or
   missing mapping stays visible and is one migration from being fixed.
-- Quantities and prices arrive as JSON numbers, so they are through a double
-  before this app sees them; `numeric` columns stop anything _further_ being
-  lost, but cannot recover precision the wire format never carried.
-- A position's quantity comes from `units` only. `fractional_units` sits beside
-  it in the protocol with no documentation this app can check — an alternative
-  total, or the fractional part of `units` — and under the second reading,
-  falling back to it would store 0.5 shares as an entire position. A position
-  reporting no usable `units` is skipped and counted rather than guessed at.
+- Quantities and prices arrive as decimal strings and are passed through to
+  `numeric` unconverted, so they are exact end to end. They are still
+  **validated** before insert — `quantity` is `not null`, and a value the column
+  would reject has to be skipped and counted, not discovered mid-insert where it
+  would cost the whole account its sync.
+- `tax_lots` is gated behind SnapTrade's paid plans, so on Personal it is null
+  essentially always. The nullable jsonb column ADR 0004 decision 4 chose
+  handles that without a migration, which is exactly what it was chosen for.
+- SnapTrade deprecates by returning `410 Gone` to accounts newer than a cutoff
+  date while continuing to serve older ones. A published OpenAPI spec and a
+  working integration elsewhere are therefore both weak evidence that an
+  endpoint is current; the generated SDK's `@deprecated` markers were the only
+  reliable signal, and worth checking first next time.

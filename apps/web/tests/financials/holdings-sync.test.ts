@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { withAuthorizedSession } from "@/lib/financials/db";
 import { syncSnapTradeHoldings, type HoldingsSyncResult } from "@/lib/financials/holdings-sync";
-import { createSnapTradeClient, type SnapTradeHoldings } from "@/lib/financials/snaptrade";
+import { createSnapTradeClient } from "@/lib/financials/snaptrade";
 import { createFinancialsStore } from "@/lib/financials/store";
 
 import {
@@ -15,7 +15,7 @@ import {
   testPool,
 } from "../support/database";
 import {
-  account,
+  AS_OF,
   FIDELITY_INDIVIDUAL,
   FIDELITY_ROTH,
   holdings,
@@ -23,6 +23,7 @@ import {
   stubHoldingsByAccount,
   TEST_AUTHORIZATION_ID,
   TEST_CREDENTIALS,
+  type PositionsResponse,
 } from "../support/snaptrade";
 
 /**
@@ -36,7 +37,6 @@ import {
  */
 
 const NOW = new Date("2026-08-02T11:37:00Z");
-const AS_OF = "2026-08-02T06:30:00Z";
 
 /** Stands in for what the SimpleFIN sync has already put there. */
 async function arrangeSimpleFinAccounts(): Promise<{ individual: string; roth: string }> {
@@ -78,7 +78,7 @@ async function link(accountLinks: Record<string, string>): Promise<void> {
 }
 
 async function runSync(
-  byAccount: Record<string, SnapTradeHoldings>,
+  byAccount: Record<string, PositionsResponse>,
   { now = NOW }: { now?: Date } = {},
 ): Promise<HoldingsSyncResult> {
   const client = createSnapTradeClient(TEST_CREDENTIALS, {
@@ -94,14 +94,12 @@ async function runSync(
 /** A second security, so a fixture can hold two distinct tickers. */
 function nvidia() {
   return {
-    symbol: {
-      id: "sym-nvda",
-      symbol: "NVDA",
-      raw_symbol: "NVDA",
-      description: "NVIDIA Corporation",
-      currency: { code: "USD" },
-      type: { code: "cs" },
-    },
+    kind: "stock",
+    id: "inst-nvda",
+    symbol: "NVDA",
+    raw_symbol: "NVDA",
+    description: "NVIDIA Corporation",
+    currency: "USD",
   };
 }
 
@@ -153,7 +151,7 @@ describe("first holdings sync", () => {
     expect(new Date(rows[0].as_of as string).toISOString()).toBe(new Date(AS_OF).toISOString());
     // The raw provider code is kept even though it mapped cleanly, so a mapping
     // this app gets wrong later is still recoverable from the row.
-    expect(rows[0].extra).toMatchObject({ snaptrade_type_code: "et" });
+    expect(rows[0].extra).toMatchObject({ snaptrade_kind: "etf" });
   });
 
   it("creates no accounts and no balance snapshots — Fidelity is already both", async () => {
@@ -174,7 +172,7 @@ describe("first holdings sync", () => {
     await link({ [FIDELITY_INDIVIDUAL]: individual });
 
     await runSync({
-      [FIDELITY_INDIVIDUAL]: holdings({ positions: [position({ units: 0.00123456 })] }),
+      [FIDELITY_INDIVIDUAL]: holdings({ results: [position({ units: "0.00123456" })] }),
     });
 
     const { rows } = await asSuperuser((query) =>
@@ -213,10 +211,8 @@ describe("repeat syncs", () => {
     await runSync({ [FIDELITY_INDIVIDUAL]: holdings() });
     await runSync({
       [FIDELITY_INDIVIDUAL]: holdings({
-        account: account({
-          sync_status: { holdings: { last_successful_sync: "2026-08-03T06:30:00Z" } },
-        }),
-        positions: [position({ units: 14, price: 295.1 })],
+        data_freshness: { as_of: "2026-08-03T06:30:00Z" },
+        results: [position({ units: "14", price: "295.1" })],
       }),
     });
 
@@ -236,10 +232,7 @@ describe("repeat syncs", () => {
 
     await runSync({
       [FIDELITY_INDIVIDUAL]: holdings(),
-      [FIDELITY_ROTH]: holdings({
-        account: account({ id: FIDELITY_ROTH }),
-        positions: [position({ units: 3 })],
-      }),
+      [FIDELITY_ROTH]: holdings({ results: [position({ units: "3" })] }),
     });
 
     expect(await countRows("public.financials_security")).toBe(1);
@@ -272,7 +265,7 @@ describe("partial failure", () => {
 
     const result = await runSync({
       [FIDELITY_INDIVIDUAL]: holdings({
-        positions: [position(), position({ symbol: null }), position({ units: null })],
+        results: [position(), position({ instrument: null }), position({ units: null })],
       }),
     });
 
@@ -290,10 +283,7 @@ describe("partial failure", () => {
 
     const result = await runSync({
       [FIDELITY_INDIVIDUAL]: holdings({
-        positions: [
-          position(),
-          position({ units: "not a number" as unknown as number, symbol: nvidia() }),
-        ],
+        results: [position(), position({ units: "not a number", instrument: nvidia() })],
       }),
     });
 

@@ -39,25 +39,45 @@ export type SnapTradeCredentials = {
 export type SecurityType =
   "equity" | "etf" | "mutual_fund" | "fixed_income" | "cash" | "crypto" | "option" | "other";
 
-export type SnapTradeSymbol = {
+/**
+ * What a position is a position *in*.
+ *
+ * A discriminated union in the protocol, on `kind` — but every variant this app
+ * cares about carries the same four fields, so it is modelled flat. `option` and
+ * `future` add their own (strike, expiry, multiplier) and are deliberately not
+ * destructured here: they land in `extra` whole, and a holdings table that
+ * treated an option like a share would be worse than one that stores it plainly.
+ */
+export type SnapTradeInstrument = {
+  /** `stock | adr | etf | mutualfund | cef | crypto | option | future | cfd | other` */
+  kind?: string;
   id?: string;
   symbol?: string;
   raw_symbol?: string;
   description?: string | null;
-  currency?: { code?: string } | null;
-  type?: { code?: string; description?: string } | null;
+  currency?: string | null;
+  exchange?: string | null;
 };
 
+/**
+ * One position, in the v2 shape.
+ *
+ * The numbers arrive as **decimal strings**, not JSON numbers, which is the
+ * quiet win of this endpoint: they go into `numeric` columns without ever
+ * passing through a double, so a fractional share count is exact end to end.
+ */
 export type SnapTradePosition = {
-  /** Doubly nested in the protocol: `position.symbol.symbol` is the security. */
-  symbol?: { symbol?: SnapTradeSymbol } | null;
-  units?: number | null;
-  fractional_units?: number | null;
-  price?: number | null;
-  open_pnl?: number | null;
-  average_purchase_price?: number | null;
-  currency?: { code?: string } | null;
-  cash_equivalent?: boolean | null;
+  instrument?: SnapTradeInstrument | null;
+  /** Signed — negative is a short position. */
+  units?: string | null;
+  /** Per share. */
+  price?: string | null;
+  /** Book price / average purchase price, per share. */
+  cost_basis?: string | null;
+  /** ISO-4217, scoping `price` and `cost_basis`. */
+  currency?: string | null;
+  cash_equivalent?: boolean;
+  /** Only on SnapTrade's paid plans; absent on Personal, and absent is not empty. */
   tax_lots?: unknown[] | null;
 };
 
@@ -69,17 +89,14 @@ export type SnapTradeAccount = {
   institution_name?: string;
   status?: string;
   account_category?: string;
-  sync_status?: {
-    holdings?: {
-      initial_sync_completed?: boolean;
-      last_successful_sync?: string | null;
-      holdings_unavailable?: boolean;
-    };
-  };
 };
 
-export type SnapTradeHoldings = {
-  account?: SnapTradeAccount;
+export type SnapTradePositions = {
+  /**
+   * When the brokerage data behind these positions was last true, from the
+   * response's own `data_freshness`. `null` when the provider omitted it.
+   */
+  asOf: Date | null;
   positions: SnapTradePosition[];
 };
 
@@ -87,7 +104,7 @@ export type SnapTradeClient = {
   /** The hosted Connection Portal URL a human opens to complete the OAuth. */
   connectionPortalUrl(options?: ConnectionPortalOptions): Promise<string>;
   listAccounts(): Promise<SnapTradeAccount[]>;
-  fetchHoldings(accountId: string): Promise<SnapTradeHoldings>;
+  fetchPositions(accountId: string): Promise<SnapTradePositions>;
 };
 
 export type ConnectionPortalOptions = {
@@ -248,17 +265,33 @@ export function createSnapTradeClient(
       return Array.isArray(body) ? (body as SnapTradeAccount[]) : [];
     },
 
-    async fetchHoldings(accountId) {
+    /**
+     * `/positions/all`, not `/holdings`.
+     *
+     * SnapTrade retired the older `/accounts/{id}/holdings`,
+     * `/accounts/{id}/positions` and `/holdings` endpoints, and answers them
+     * with `410 Gone — This endpoint is no longer available for your account`
+     * for accounts created after April 2026. This is their replacement, and it
+     * is the better shape besides: one call covers equities, funds, crypto,
+     * options and futures, the numbers are decimal strings rather than JSON
+     * numbers, and the reading's own timestamp comes back with it instead of
+     * having to be dug out of a separate account lookup.
+     */
+    async fetchPositions(accountId) {
       const body = (await request(
         "GET",
-        `/accounts/${encodeURIComponent(accountId)}/holdings`,
-      )) as Partial<SnapTradeHoldings> | null;
+        `/accounts/${encodeURIComponent(accountId)}/positions/all`,
+      )) as { results?: unknown; data_freshness?: { as_of?: unknown } } | null;
+
+      const reported = body?.data_freshness?.as_of;
+      const asOf = typeof reported === "string" ? new Date(reported) : null;
 
       return {
-        account: body?.account,
+        asOf: asOf !== null && !Number.isNaN(asOf.getTime()) ? asOf : null,
         // A missing array reads as "no positions", not as a broken response —
-        // an account genuinely holding nothing is the same shape.
-        positions: Array.isArray(body?.positions) ? body.positions : [],
+        // an account genuinely holding nothing is the same shape. Note the
+        // protocol calls it `results`; this app calls the concept positions.
+        positions: Array.isArray(body?.results) ? (body.results as SnapTradePosition[]) : [],
       };
     },
   };
@@ -286,22 +319,21 @@ async function failureMessage(response: Response, method: string, path: string):
 }
 
 /**
- * When a set of holdings was last true, per the provider.
+ * When a reading was last true, and whether the provider actually said so.
  *
- * Deliberately not the moment this app fetched them. `as_of` is half the key
- * that makes a re-run idempotent, so it has to be a property of the *reading*
- * rather than of the run: SnapTrade refreshes a Daily-plan connection once a
- * day, so two syncs between refreshes see the same `last_successful_sync`, and
- * the second inserts nothing. Stamping `now()` instead would write a fresh
- * snapshot of identical numbers on every retry.
+ * `as_of` is half the key that makes a re-run idempotent, so it has to be a
+ * property of the *reading* rather than of the run: SnapTrade refreshes a
+ * Daily-plan connection once a day, so two syncs between refreshes see the same
+ * `data_freshness.as_of`, collide on every row, and the second writes nothing.
+ * Stamping `now()` instead would write a fresh snapshot of identical numbers on
+ * every retry.
  *
  * The fallback is the run's own instant, and it costs exactly that idempotency.
- * That is the right trade: a reading with a slightly-wrong timestamp is worth
+ * That is the right trade: a reading with an approximate timestamp is worth
  * more than no reading at all.
  *
  * Which of the two happened is returned rather than swallowed, and that is the
- * point of the return shape. The field name below is taken from the generated
- * SDK's own typings, not from prose; if SnapTrade ever renames or drops it, the
+ * point of the return shape. If SnapTrade ever renames or drops the field, the
  * fallback would quietly restore `now()`, idempotency would silently stop
  * working, and every test here would still pass because every fixture is
  * hand-written. Reporting the source puts that failure in the cron response
@@ -313,54 +345,44 @@ export type HoldingsAsOf = {
   source: "provider" | "run";
 };
 
-export function holdingsAsOf(account: SnapTradeAccount | undefined, fallback: Date): HoldingsAsOf {
-  const reported = account?.sync_status?.holdings?.last_successful_sync;
-
-  if (typeof reported !== "string") return { at: fallback, source: "run" };
-
-  const parsed = new Date(reported);
-
-  return Number.isNaN(parsed.getTime())
-    ? { at: fallback, source: "run" }
-    : { at: parsed, source: "provider" };
-}
-
-/** The security a position is a position *in*, dug out of the double nesting. */
-export function positionSymbol(position: SnapTradePosition): SnapTradeSymbol | undefined {
-  return position.symbol?.symbol ?? undefined;
+export function holdingsAsOf(reported: Date | null | undefined, fallback: Date): HoldingsAsOf {
+  return reported ? { at: reported, source: "provider" } : { at: fallback, source: "run" };
 }
 
 /**
- * SnapTrade's security-type codes, as far as they are known.
+ * ADR 0004's vocabulary, from the protocol's own `instrument.kind`.
  *
- * SnapTrade publishes no exhaustive list of `type.code` values — the API
- * reference documents the field and gives `et` as an example, and that is all.
- * So this maps the codes that have been seen or are unambiguous, and everything
- * else lands as `other` with the raw code kept on the security's `extra`. An
- * unmapped security is then visible and one migration away from being fixed,
- * which a guessed mapping would not be.
+ * A documented discriminator rather than the undocumented two-letter `type.code`
+ * the retired endpoints carried, so this mapping is something the API guarantees
+ * rather than something this app inferred. Every kind is covered; the fallback
+ * exists for a kind added after this was written, and keeps the raw value in the
+ * security's `extra` so it stays visible and fixable.
+ *
+ * `future` and `cfd` land in `other` deliberately. Neither is a security this
+ * app models — a futures contract has no cost basis per share in the sense the
+ * holdings table means — and inventing a category for a position type that will
+ * never appear in these accounts would be worse than saying "other" honestly.
  */
-const SECURITY_TYPE_BY_CODE: Record<string, SecurityType> = {
-  cs: "equity",
-  ps: "equity",
-  ad: "equity",
-  et: "etf",
-  mf: "mutual_fund",
-  oef: "mutual_fund",
+const SECURITY_TYPE_BY_KIND: Record<string, SecurityType> = {
+  stock: "equity",
+  adr: "equity",
+  etf: "etf",
+  mutualfund: "mutual_fund",
   cef: "mutual_fund",
-  bnd: "fixed_income",
   crypto: "crypto",
-  op: "option",
-  cash: "cash",
+  option: "option",
+  future: "other",
+  cfd: "other",
+  other: "other",
 };
 
 export function securityTypeFor(position: SnapTradePosition): SecurityType {
-  // `cash_equivalent` overrides the code: a money-market fund is reported with a
-  // fund's type code, and calling it a mutual fund would put swept cash in the
-  // same bucket as an actual investment position.
+  // `cash_equivalent` overrides the kind: SnapTrade sets it on money-market
+  // funds that are also counted in cash balance, and filing swept cash as a
+  // mutual fund would put it in the same bucket as an actual investment.
   if (position.cash_equivalent === true) return "cash";
 
-  const code = positionSymbol(position)?.type?.code;
+  const kind = position.instrument?.kind;
 
-  return (code === undefined ? undefined : SECURITY_TYPE_BY_CODE[code.toLowerCase()]) ?? "other";
+  return (kind === undefined ? undefined : SECURITY_TYPE_BY_KIND[kind.toLowerCase()]) ?? "other";
 }
