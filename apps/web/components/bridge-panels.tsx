@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { ChartGridlines, MicroLabel, SegmentedToggle } from "@/components/console";
@@ -121,13 +122,26 @@ function AccountPanel({ panel, period }: { panel: BridgePanel; period: TimeRange
     >
       <header className="border-hairline flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
         <MicroLabel as="h3">{account.name}</MicroLabel>
-        {bridge ? (
-          <span
-            className={`text-[13px] tabular-nums ${bridge.delta < 0 ? "text-negative" : "text-positive"}`}
+        <div className="flex items-center gap-4">
+          {bridge ? (
+            <span
+              className={`text-[13px] tabular-nums ${bridge.delta < 0 ? "text-negative" : "text-positive"}`}
+            >
+              {formatSignedAmount(bridge.delta, account.currency)} over {rangeLabel(period)}
+            </span>
+          ) : null}
+          {/*
+           * The way into the drill-down, and the only one: the bridge says why
+           * this balance moved, and the question it leaves a reader with is what
+           * the balance is made of.
+           */}
+          <Link
+            href={`/financials/holdings?account=${encodeURIComponent(account.id)}`}
+            className="text-muted hover:text-accent text-[13px] whitespace-nowrap underline underline-offset-4"
           >
-            {formatSignedAmount(bridge.delta, account.currency)} over {rangeLabel(period)}
-          </span>
-        ) : null}
+            Holdings →
+          </Link>
+        </div>
       </header>
 
       {bridge ? (

@@ -33,6 +33,17 @@ export function formatCompactAmount(value: number, currency?: string): string {
   });
 }
 
+/**
+ * For a change expressed as a share, where the sign is half the meaning.
+ *
+ * Signed by hand rather than by `Intl`, so the minus is the same U+2212
+ * `formatSignedAmount` uses. A gain reads as `−$50.00 (−5.3%)`, and mixing a
+ * typographic minus with an ASCII hyphen inside one figure would show.
+ */
+export function formatSignedPercent(ratio: number): string {
+  return `${ratio < 0 ? "−" : "+"}${formatPercent(Math.abs(ratio))}`;
+}
+
 export function formatPercent(ratio: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "percent",

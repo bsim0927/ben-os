@@ -248,6 +248,151 @@ export function waterfallGeometry({
   return { bars: placed, connectors, gridlines, floor: bottom };
 }
 
+/** One wedge of a donut, in *screen* space. */
+export type DonutSlice = {
+  /** `d` for the annular sector, ready to fill. */
+  path: string;
+  /** Turns clockwise from twelve o'clock, in [0, 1] — a fraction, not radians. */
+  startAngle: number;
+  endAngle: number;
+  /** This slice's share of the total, which is `endAngle − startAngle`. */
+  share: number;
+  value: number;
+  /**
+   * Which input this slice came from.
+   *
+   * Carried because empty values are dropped rather than drawn: without it, a
+   * legend colouring by position would shift every entry after a zero.
+   */
+  index: number;
+};
+
+export type DonutGeometry = {
+  slices: DonutSlice[];
+  center: { x: number; y: number };
+  radius: number;
+  innerRadius: number;
+};
+
+export type DonutInput = {
+  /** Parallel to the caller's own list; empty and negative values are skipped. */
+  values: readonly number[];
+  /** The box is square, so one dimension says it all. */
+  size: number;
+  /** The ring's width — the hole is `size / 2 − thickness` across. */
+  thickness: number;
+};
+
+/**
+ * SVG geometry for a donut, drawn clockwise from twelve o'clock.
+ *
+ * Here rather than in the component for the reason the other two geometries are:
+ * the hard parts — the full-circle case that no single arc can close, and the
+ * dropped empties that would otherwise slide a legend's colours along by one —
+ * are arithmetic, and arithmetic is testable without a DOM.
+ *
+ * A share of the whole is the only thing a donut can honestly show, so there is
+ * no scale and no axis here: every slice is its value over the total.
+ */
+export function donutGeometry({ values, size, thickness }: DonutInput): DonutGeometry {
+  const radius = size / 2;
+  const innerRadius = Math.max(radius - thickness, 0);
+  const center = { x: radius, y: radius };
+
+  // Negative values are dropped rather than reflected: a short position has no
+  // meaningful slice of an allocation, and drawing it as though it did would
+  // make the shares sum to something other than the account.
+  const present = values
+    .map((value, index) => ({ value, index }))
+    .filter((entry) => entry.value > 0);
+  const total = present.reduce((sum, entry) => sum + entry.value, 0);
+
+  if (total === 0) {
+    return { slices: [], center, radius, innerRadius };
+  }
+
+  let turned = 0;
+
+  const slices = present.map(({ value, index }) => {
+    const share = value / total;
+    const startAngle = turned;
+    // Accumulated rather than summed from scratch so the slices meet exactly,
+    // leaving no hairline of background between two adjacent wedges.
+    const endAngle = index === present[present.length - 1].index ? 1 : turned + share;
+
+    turned = endAngle;
+
+    return {
+      path: annularSector(center, radius, innerRadius, startAngle, endAngle),
+      startAngle: round(startAngle),
+      endAngle: round(endAngle),
+      share: round(share),
+      value,
+      index,
+    };
+  });
+
+  return { slices, center, radius, innerRadius };
+}
+
+/**
+ * The wedge between two turns, as a path.
+ *
+ * A full turn is split into two half arcs, because an arc whose start and end
+ * points coincide is degenerate — every renderer draws exactly nothing for it,
+ * which is the wrong answer for the common case of an account holding one thing.
+ */
+function annularSector(
+  center: { x: number; y: number },
+  radius: number,
+  innerRadius: number,
+  startAngle: number,
+  endAngle: number,
+): string {
+  if (endAngle - startAngle >= 1) {
+    return `${ring(center, radius, 1)} ${ring(center, innerRadius, 0)}`;
+  }
+
+  const outerStart = onCircle(center, radius, startAngle);
+  const outerEnd = onCircle(center, radius, endAngle);
+  const innerEnd = onCircle(center, innerRadius, endAngle);
+  const innerStart = onCircle(center, innerRadius, startAngle);
+  const large = endAngle - startAngle > 0.5 ? 1 : 0;
+
+  return (
+    `M ${outerStart.x} ${outerStart.y} ` +
+    `A ${radius} ${radius} 0 ${large} 1 ${outerEnd.x} ${outerEnd.y} ` +
+    `L ${innerEnd.x} ${innerEnd.y} ` +
+    `A ${innerRadius} ${innerRadius} 0 ${large} 0 ${innerStart.x} ${innerStart.y} Z`
+  );
+}
+
+/** A closed circle as two half arcs, wound the given way so the hole punches out. */
+function ring(center: { x: number; y: number }, radius: number, sweep: 0 | 1): string {
+  const top = onCircle(center, radius, 0);
+  const bottom = onCircle(center, radius, 0.5);
+
+  return (
+    `M ${top.x} ${top.y} ` +
+    `A ${radius} ${radius} 0 0 ${sweep} ${bottom.x} ${bottom.y} ` +
+    `A ${radius} ${radius} 0 0 ${sweep} ${top.x} ${top.y} Z`
+  );
+}
+
+/** Clockwise from twelve o'clock, which is where a reader starts. */
+function onCircle(
+  center: { x: number; y: number },
+  radius: number,
+  angle: number,
+): { x: number; y: number } {
+  const radians = angle * 2 * Math.PI - Math.PI / 2;
+
+  return {
+    x: round(center.x + radius * Math.cos(radians)),
+    y: round(center.y + radius * Math.sin(radians)),
+  };
+}
+
 /**
  * A y scale whose bounds land on round numbers, so the gridline labels read as
  * money rather than as whatever the data happened to reach.
