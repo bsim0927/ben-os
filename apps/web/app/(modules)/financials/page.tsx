@@ -5,6 +5,7 @@ import { FlowPanels } from "@/components/flow-panels";
 import { NetWorthHero } from "@/components/net-worth-hero";
 import type { BridgeAccountRef, BridgeTransactionInput } from "@/lib/financials/bridge";
 import type { CategoryRef, FlowAccountRef, FlowTransactionInput } from "@/lib/financials/flow";
+import { sharedCurrency } from "@/lib/financials/format";
 import {
   buildNetWorthSeries,
   type AccountRef,
@@ -184,7 +185,7 @@ export default async function FinancialsOverview() {
         accounts={accountRefs}
         series={series}
         today={new Date().toISOString()}
-        currency={sharedCurrency(accounts.data ?? [])}
+        currency={sharedCurrency((accounts.data ?? []).map((account) => account.currency))}
       />
 
       <FlowPanels
@@ -211,17 +212,4 @@ export default async function FinancialsOverview() {
       </p>
     </div>
   );
-}
-
-/**
- * The currency to render totals in, or nothing when the accounts disagree.
- *
- * Summing across currencies is wrong, and v1 has one; the honest response to
- * more than one is to drop the symbol rather than stamp a total with a currency
- * that isn't what it means.
- */
-function sharedCurrency(accounts: readonly AccountRow[]): string | undefined {
-  const currencies = new Set(accounts.map((account) => account.currency));
-
-  return currencies.size === 1 ? [...currencies][0] : undefined;
 }

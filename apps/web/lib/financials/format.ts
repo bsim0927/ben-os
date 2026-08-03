@@ -53,6 +53,29 @@ export function formatPercent(ratio: number): string {
 }
 
 /**
+ * The one currency a set of figures can be labelled with, or nothing when they
+ * disagree.
+ *
+ * Summing across currencies is wrong and v1 has one, so the honest response to
+ * more than one is to drop the symbol rather than stamp a total with a currency
+ * that isn't what it means. Note what this does *not* fix: the sum underneath is
+ * still a sum of two currencies, and a caller that can say so should.
+ *
+ * Here rather than beside either caller because both the overview (across
+ * Accounts) and the holdings page (across Holdings) need the same rule, and two
+ * copies would be free to disagree about what an absent currency means.
+ */
+export function sharedCurrency(
+  currencies: readonly (string | null | undefined)[],
+): string | undefined {
+  const named = new Set(
+    currencies.filter((currency) => currency !== null && currency !== undefined),
+  );
+
+  return named.size === 1 ? [...named][0] : undefined;
+}
+
+/**
  * UTC throughout: the sync's own timestamps are UTC, and a page that silently
  * reinterpreted them in the viewer's zone would make an off-by-hours balance
  * date look like a sync bug.

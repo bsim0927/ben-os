@@ -40,7 +40,7 @@ type HoldingRow = {
   financials_security: { symbol: string; name: string | null; security_type: string } | null;
 };
 
-export default async function FidelityHoldings({
+export default async function HoldingsPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -64,10 +64,16 @@ export default async function FidelityHoldings({
 
   const holdings = account === null ? null : await readCurrentHoldings(supabase, account.id);
 
-  const view = buildHoldingsView({
-    accountId: account?.id ?? "",
-    holdings: (holdings?.data ?? []).flatMap(toSnapshotInput),
-  });
+  // Built only when there is an account to build it for. An empty id would
+  // resolve to an empty view, which renders identically — and is a figure this
+  // page would then be claiming about an account that does not exist.
+  const view =
+    account === null
+      ? null
+      : buildHoldingsView({
+          accountId: account.id,
+          holdings: (holdings?.data ?? []).flatMap(toSnapshotInput),
+        });
 
   const error = accounts.error ?? holdings?.error ?? null;
 
@@ -80,7 +86,7 @@ export default async function FidelityHoldings({
               {account ? account.name : "Holdings"}
             </h1>
             <p className="text-muted mt-1 text-[13px]">
-              Every position in this account as of its latest holdings sync. Values, cost basis and
+              Every holding in this account as of its latest holdings sync. Values, cost basis and
               gain are computed from the rows below, not stored.
             </p>
           </div>
@@ -108,7 +114,7 @@ export default async function FidelityHoldings({
         </p>
       ) : null}
 
-      {account === null ? (
+      {account === null || view === null ? (
         <p className="border-hairline text-muted border-t pt-3 text-[13px]">
           No investment accounts yet. An account becomes one when it is linked through
           SnapTrade&apos;s Connection Portal, which is what marks it as holding securities rather
@@ -140,17 +146,31 @@ export default async function FidelityHoldings({
 
           {/*
            * Said only when it is true, and worth saying when it is: the strip's
-           * three figures are then sums over different subsets of the same
-           * account, and `value − cost` will not equal the gain beside it.
+           * figures are then sums over different subsets of the same account, so
+           * `value − cost` will not equal the gain beside it and the gain's
+           * percentage is against a cost basis other than the one shown.
            */}
-          {view.pricedPositions < view.positions || view.costedPositions < view.positions ? (
+          {view.pricedHoldings < view.holdings || view.costedHoldings < view.holdings ? (
             <p className="text-muted text-[12px]">
-              {view.pricedPositions < view.positions
-                ? `${view.positions - view.pricedPositions} of ${view.positions} positions came without a market price, so they are missing from the value above. `
+              {view.pricedHoldings < view.holdings
+                ? `${view.holdings - view.pricedHoldings} of ${view.holdings} holdings came without a market price, so they are missing from the value above. `
                 : ""}
-              {view.costedPositions < view.positions
-                ? `${view.positions - view.costedPositions} came without a cost basis, so the gain is measured over the rest rather than reported as pure profit.`
+              {view.costedHoldings < view.holdings
+                ? `${view.holdings - view.costedHoldings} came without a cost basis, so the gain — and its percentage — is measured over the rest rather than reported as pure profit. Value minus cost will not equal it.`
                 : ""}
+            </p>
+          ) : null}
+
+          {/*
+           * Dropping the currency symbol makes the figure honest about its units
+           * and not about its arithmetic: the sum underneath still added two
+           * currencies together. v1 has one currency, so this should never fire
+           * — which is exactly why it says so rather than being left implicit.
+           */}
+          {view.mixedCurrency ? (
+            <p className="border-hairline text-negative border-t pt-3 text-[12px]">
+              These holdings are priced in more than one currency. The totals above add them
+              together without converting, so they are not a figure to rely on.
             </p>
           ) : null}
 
@@ -162,7 +182,7 @@ export default async function FidelityHoldings({
         <Link href="/financials" className="hover:text-ink underline underline-offset-4">
           Back to Financials
         </Link>{" "}
-        — net worth, flow, and the balance bridge these positions sit inside.
+        — net worth, flow, and the balance bridge these holdings sit inside.
       </p>
     </div>
   );
@@ -174,8 +194,8 @@ export default async function FidelityHoldings({
  *
  * `financials_holding` is append-on-sync (ADR 0004 decision 1), so a single
  * `order by as_of desc limit N` would work right up until an account held more
- * than N positions — at which point the newest snapshot would be cut in half and
- * every total on this page would quietly be short a position. Asking for the
+ * than N holdings — at which point the newest snapshot would be cut in half and
+ * every total on this page would quietly be short a holding. Asking for the
  * latest `as_of` first and then for exactly that reading has no such bound: the
  * second query returns one snapshot, whatever its size.
  *
@@ -215,7 +235,7 @@ async function readCurrentHoldings(
  *
  * A join that came back empty drops the row rather than inventing a symbol for
  * it: `security_id` is a non-null foreign key, so this only happens if RLS hid
- * the security or the select changed shape, and a position labelled "—" in every
+ * the security or the select changed shape, and a holding labelled "—" in every
  * column would be worse than one that is honestly not there.
  */
 function toSnapshotInput(row: HoldingRow): HoldingSnapshotInput[] {

@@ -11,11 +11,12 @@ import {
   formatSignedPercent,
 } from "@/lib/financials/format";
 import {
-  sortPositions,
+  DEFAULT_SORT,
+  sortHoldings,
   type HoldingsGroup,
   type HoldingsView,
-  type Position,
-  type PositionColumn,
+  type Holding,
+  type HoldingColumn,
   type SortDirection,
   type TaxLot,
 } from "@/lib/financials/holdings";
@@ -58,7 +59,7 @@ export type HoldingsLedgerProps = {
 };
 
 /** How each section is currently ordered, keyed by security type. */
-type SortState = Record<string, { column: PositionColumn; direction: SortDirection }>;
+type SortState = Record<string, { column: HoldingColumn; direction: SortDirection }>;
 
 export function HoldingsLedger({ view, accountName }: HoldingsLedgerProps) {
   const [sorts, setSorts] = useState<SortState>({});
@@ -77,16 +78,16 @@ export function HoldingsLedger({ view, accountName }: HoldingsLedgerProps) {
    * different one starts that column at the end a reader wants first — largest
    * for a figure, A–Z for a name.
    */
-  const toggle = (securityType: string, column: PositionColumn) =>
+  const toggle = (securityType: string, column: HoldingColumn) =>
     setSorts((current) => {
-      const active = current[securityType] ?? defaultSort;
+      const active = current[securityType] ?? DEFAULT_SORT;
 
       return {
         ...current,
         [securityType]:
           active.column === column
             ? { column, direction: active.direction === "asc" ? "desc" : "asc" }
-            : { column, direction: column === "position" ? "asc" : "desc" },
+            : { column, direction: column === "holding" ? "asc" : "desc" },
       };
     });
 
@@ -94,36 +95,41 @@ export function HoldingsLedger({ view, accountName }: HoldingsLedgerProps) {
     <div className="flex flex-col gap-8">
       <Allocation view={view} />
 
-      <section aria-label="Positions" className="flex flex-col gap-4">
+      <section aria-label="Holdings" className="flex flex-col gap-4">
         {view.groups.map((group) => (
           <GroupSection
             key={group.securityType}
             group={group}
             currency={view.currency}
-            sort={sorts[group.securityType] ?? defaultSort}
+            sort={sorts[group.securityType] ?? DEFAULT_SORT}
             onSort={(column) => toggle(group.securityType, column)}
           />
         ))}
 
         {/*
          * Said once, under the ledger, rather than as an empty column in every
-         * row. SnapTrade gates lot detail behind its paid plans, so on Personal
-         * this is the normal reading rather than a fault — and a page that
-         * silently showed no lots would look like one that had lost them.
+         * row — and worded for which of the two silences it is. SnapTrade gates
+         * lot detail behind its paid plans, so "none at all" is the normal
+         * reading rather than a fault; "some but not all" is the one a reader
+         * would otherwise have to infer from a missing button.
          */}
-        {view.groups.every((group) => group.positions.every((p) => p.taxLots === null)) ? (
+        {view.reportsTaxLots === 0 ? (
           <p className="text-muted text-[12px]">
             No per-lot cost basis in this reading — SnapTrade&apos;s Personal plan reports a
-            position&apos;s average cost only. Lots appear here for any position that arrives with
+            holding&apos;s average cost only. Lots appear here for any holding that arrives with
             them.
+          </p>
+        ) : view.reportsTaxLots < view.holdings ? (
+          <p className="text-muted text-[12px]">
+            Lot detail is shown for the {view.reportsTaxLots} of {view.holdings} holdings that came
+            with it. The rest report an average cost only, which is the provider&apos;s limit rather
+            than a gap in this reading.
           </p>
         ) : null}
       </section>
     </div>
   );
 }
-
-const defaultSort = { column: "marketValue", direction: "desc" } as const;
 
 /**
  * The composition strip: a donut and the legend that reads it.
@@ -177,7 +183,7 @@ function Allocation({ view }: { view: HoldingsView }) {
             fontSize={11}
             className="fill-muted tabular-nums"
           >
-            {view.positions} {view.positions === 1 ? "position" : "positions"}
+            {view.holdings} {view.holdings === 1 ? "holding" : "holdings"}
           </text>
           <circle cx={center.x} cy={center.y} r={radius} fill="none" />
         </svg>
@@ -219,14 +225,17 @@ function Allocation({ view }: { view: HoldingsView }) {
 }
 
 type SortableColumn = {
-  column: PositionColumn;
+  column: HoldingColumn;
   label: string;
   /** Names sort left, figures sort right — the column reads under its own digits. */
   numeric: boolean;
 };
 
 const COLUMNS: readonly SortableColumn[] = [
-  { column: "position", label: "Position", numeric: false },
+  // "Position" rather than "Holding" is the one place this page uses the word
+  // CONTEXT.md tells it to avoid, and it is deliberate: issue #28 names this
+  // column, and a spec that enumerates its columns has picked the heading.
+  { column: "holding", label: "Position", numeric: false },
   { column: "quantity", label: "Quantity", numeric: true },
   { column: "averageCostBasis", label: "Avg cost", numeric: true },
   { column: "marketPrice", label: "Market price", numeric: true },
@@ -244,10 +253,10 @@ function GroupSection({
 }: {
   group: HoldingsGroup;
   currency?: string;
-  sort: { column: PositionColumn; direction: SortDirection };
-  onSort: (column: PositionColumn) => void;
+  sort: { column: HoldingColumn; direction: SortDirection };
+  onSort: (column: HoldingColumn) => void;
 }) {
-  const positions = sortPositions(group.positions, sort.column, sort.direction);
+  const holdings = sortHoldings(group.holdings, sort.column, sort.direction);
 
   return (
     <section
@@ -258,7 +267,7 @@ function GroupSection({
         <div className="flex items-baseline gap-3">
           <MicroLabel as="h3">{group.label}</MicroLabel>
           <span className="text-muted text-[12px] tabular-nums">
-            {group.count} {group.count === 1 ? "position" : "positions"}
+            {group.count} {group.count === 1 ? "holding" : "holdings"}
           </span>
         </div>
 
@@ -272,7 +281,7 @@ function GroupSection({
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] border-collapse text-[13px]">
           <caption className="sr-only">
-            {group.label} — {group.count} positions, sorted by{" "}
+            {group.label} — {group.count} holdings, sorted by{" "}
             {COLUMNS.find((entry) => entry.column === sort.column)?.label},{" "}
             {sort.direction === "asc" ? "ascending" : "descending"}
           </caption>
@@ -308,8 +317,8 @@ function GroupSection({
             </tr>
           </thead>
           <tbody>
-            {positions.map((position) => (
-              <PositionRow key={position.securityId} position={position} currency={currency} />
+            {holdings.map((holding) => (
+              <LedgerRow key={holding.securityId} holding={holding} currency={currency} />
             ))}
           </tbody>
         </table>
@@ -318,17 +327,17 @@ function GroupSection({
   );
 }
 
-function PositionRow({ position, currency }: { position: Position; currency?: string }) {
+function LedgerRow({ holding, currency }: { holding: Holding; currency?: string }) {
   const [showLots, setShowLots] = useState(false);
-  const lots = position.taxLots;
+  const lots = holding.taxLots;
 
   return (
     <>
       <tr className="border-hairline text-ink border-b last:border-b-0">
         <td className="px-2 py-2 pl-4">
-          <span className="text-ink font-medium">{position.symbol}</span>
-          {position.name ? (
-            <span className="text-muted ml-2 text-[12px]">{position.name}</span>
+          <span className="text-ink font-medium">{holding.symbol}</span>
+          {holding.name ? (
+            <span className="text-muted ml-2 text-[12px]">{holding.name}</span>
           ) : null}
           {lots ? (
             <button
@@ -342,42 +351,42 @@ function PositionRow({ position, currency }: { position: Position; currency?: st
           ) : null}
         </td>
         <td className="px-2 py-2 text-right">
-          <Quantity value={position.quantity} />
+          <Quantity value={holding.quantity} />
         </td>
         <td className="px-2 py-2 text-right tabular-nums">
-          <Optional value={position.averageCostBasis} currency={position.currency ?? currency} />
+          <Optional value={holding.averageCostBasis} currency={holding.currency ?? currency} />
         </td>
         <td className="px-2 py-2 text-right tabular-nums">
-          <Optional value={position.marketPrice} currency={position.currency ?? currency} />
+          <Optional value={holding.marketPrice} currency={holding.currency ?? currency} />
         </td>
         <td className="px-2 py-2 text-right tabular-nums">
-          <Optional value={position.marketValue} currency={position.currency ?? currency} />
+          <Optional value={holding.marketValue} currency={holding.currency ?? currency} />
         </td>
         <td className="px-2 py-2 text-right tabular-nums">
-          {position.gain === null ? (
+          {holding.gain === null ? (
             <span className="text-muted">—</span>
           ) : (
-            <span className={toneFor(position.gain)}>
-              {signedAmount(position.gain, position.currency ?? currency)}
+            <span className={toneFor(holding.gain)}>
+              {signedAmount(holding.gain, holding.currency ?? currency)}
             </span>
           )}
         </td>
         <td className="px-2 py-2 text-right tabular-nums">
-          {position.gainRatio === null ? (
+          {holding.gainRatio === null ? (
             <span className="text-muted">—</span>
           ) : (
-            <span className={toneFor(position.gainRatio)}>{signedPercent(position.gainRatio)}</span>
+            <span className={toneFor(holding.gainRatio)}>{signedPercent(holding.gainRatio)}</span>
           )}
         </td>
         <td className="text-muted px-2 py-2 pr-4 text-right tabular-nums">
-          {position.shareOfAccount === null ? "—" : formatPercent(position.shareOfAccount)}
+          {holding.shareOfAccount === null ? "—" : formatPercent(holding.shareOfAccount)}
         </td>
       </tr>
 
       {showLots && lots ? (
         <tr className="border-hairline bg-panel-2 border-b last:border-b-0">
           <td colSpan={COLUMNS.length} className="px-4 py-3">
-            <Lots lots={lots} symbol={position.symbol} currency={position.currency ?? currency} />
+            <Lots lots={lots} symbol={holding.symbol} currency={holding.currency ?? currency} />
           </td>
         </tr>
       ) : null}
@@ -471,7 +480,7 @@ export function GainLoss({
  * A gain carries its sign; a gain of nothing does not.
  *
  * The same rule the balance bridge applies to its segments: `+$0.00` claims a
- * direction that a change of nothing does not have, and a money-market position
+ * direction that a change of nothing does not have, and a money-market holding
  * held at par is exactly that case on every reading.
  */
 function signedAmount(value: number, currency?: string): string {
@@ -484,7 +493,7 @@ function signedPercent(ratio: number): string {
 
 /**
  * Share counts, not money: no currency symbol and no forced two decimals, since
- * a fractional position is routinely 0.00123456 and rounding it to cents would
+ * a fractional holding is routinely 0.00123456 and rounding it to cents would
  * print it as zero.
  */
 function Quantity({ value }: { value: number }) {

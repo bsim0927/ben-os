@@ -5,7 +5,7 @@ const { createServerClient } = vi.hoisted(() => ({ createServerClient: vi.fn() }
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: createServerClient }));
 
-import FidelityHoldings from "@/app/(modules)/financials/holdings/page";
+import HoldingsPage from "@/app/(modules)/financials/holdings/page";
 
 /**
  * The Holdings drill-down, rendered from seeded `financials_holding` rows.
@@ -43,57 +43,84 @@ type HoldingSeed = {
   financials_security: { symbol: string; name: string | null; security_type: string } | null;
 };
 
-function seed(
-  symbol: string,
-  securityType: string,
-  quantity: string,
-  averageCostBasis: string | null,
-  marketPrice: string | null,
-  overrides: Partial<HoldingSeed> = {},
-): HoldingSeed {
+/**
+ * One row, named rather than positional: `cost` and `price` are both decimal
+ * strings, and a fixture that told them apart only by argument order would be a
+ * fixture nobody could read a total off.
+ */
+type SeedSpec = {
+  symbol: string;
+  quantity: string;
+  cost: string | null;
+  price: string | null;
+  type?: string;
+  account?: string;
+  currency?: string | null;
+  asOf?: string;
+  taxLots?: unknown;
+};
+
+function seed({
+  symbol,
+  quantity,
+  cost,
+  price,
+  type = "equity",
+  account = "ind",
+  currency = "USD",
+  asOf = LATEST,
+  taxLots = null,
+}: SeedSpec): HoldingSeed {
   return {
-    account_id: "ind",
-    security_id: `${symbol}-${overrides.account_id ?? "ind"}`,
+    account_id: account,
+    security_id: `${symbol}-${account}`,
     quantity,
-    average_cost_basis: averageCostBasis,
-    market_price: marketPrice,
-    currency: "USD",
-    tax_lots: null,
-    as_of: LATEST,
-    financials_security: { symbol, name: `${symbol} Inc.`, security_type: securityType },
-    ...overrides,
+    average_cost_basis: cost,
+    market_price: price,
+    currency,
+    tax_lots: taxLots,
+    as_of: asOf,
+    financials_security: { symbol, name: `${symbol} Inc.`, security_type: type },
   };
 }
 
 /**
- * $1,140 across three security types, two of them holding two positions — the
+ * $1,140 across three security types, two of them holding two securities — the
  * second pair is what makes "a sort stayed inside its section" an assertion
  * rather than a claim about a table of one row.
  */
 const holdings: HoldingSeed[] = [
-  seed("GOOGL", "equity", "2", "50", "100", {
+  seed({
+    symbol: "GOOGL",
+    quantity: "2",
+    cost: "50",
+    price: "100",
     // The one populated lots payload: SnapTrade sends none on Personal, so this
     // is the shape a paid plan would deliver rather than one seen in this data.
-    tax_lots: [
+    taxLots: [
       { units: "1.5", price: "40.00", acquired_date: "2024-03-01" },
       { units: "0.5", price: "70.00", acquired_date: "2025-11-14" },
     ],
   }),
-  seed("AMZN", "equity", "1", "300", "250"),
-  seed("URA", "etf", "4", "50", "25"),
-  seed("VTI", "etf", "2", "100", "120"),
-  seed("SPAXX", "cash", "350", "1", "1"),
+  seed({ symbol: "AMZN", quantity: "1", cost: "300", price: "250" }),
+  seed({ symbol: "URA", type: "etf", quantity: "4", cost: "50", price: "25" }),
+  seed({ symbol: "VTI", type: "etf", quantity: "2", cost: "100", price: "120" }),
+  seed({ symbol: "SPAXX", type: "cash", quantity: "350", cost: "1", price: "1" }),
 
   // Last night's reading of the same account. GOOGL was priced at $10 then, and
   // IONQ was still held — neither may appear on a page headed "current".
-  seed("GOOGL", "equity", "2", "50", "10", { as_of: EARLIER }),
-  seed("IONQ", "equity", "5", "54.53", "36.44", { as_of: EARLIER }),
+  seed({ symbol: "GOOGL", quantity: "2", cost: "50", price: "10", asOf: EARLIER }),
+  seed({ symbol: "IONQ", quantity: "5", cost: "54.53", price: "36.44", asOf: EARLIER }),
 
   // The other account, synced two seconds later.
-  seed("VT", "etf", "3.903", "153.7023", "155.86", {
-    account_id: "roth",
-    as_of: ROTH_LATEST,
-    security_id: "VT-roth",
+  seed({
+    symbol: "VT",
+    type: "etf",
+    quantity: "3.903",
+    cost: "153.7023",
+    price: "155.86",
+    account: "roth",
+    asOf: ROTH_LATEST,
   }),
 ];
 
@@ -174,7 +201,7 @@ function stubServer({
 }
 
 async function renderPage(account?: string) {
-  render(await FidelityHoldings({ searchParams: Promise.resolve({ account }) }));
+  render(await HoldingsPage({ searchParams: Promise.resolve({ account }) }));
 }
 
 function section(label: string): HTMLElement {
@@ -189,7 +216,7 @@ function symbolsIn(label: string): string[] {
     .map((row) => within(row).getAllByRole("cell")[0].firstElementChild?.textContent ?? "");
 }
 
-/** One position's cells, keyed by the column headers above them. */
+/** One holding's cells, keyed by the column headers above them. */
 function cellsFor(label: string, symbol: string): string[] {
   const row = within(section(label))
     .getAllByRole("row")
@@ -224,11 +251,11 @@ describe("which rows the page is built from", () => {
   it("shows the latest reading's price, not the one before it", async () => {
     await renderPage("ind");
 
-    // $10.00 was last night's price for the same position.
+    // $10.00 was last night's price for the same holding.
     expect(cellsFor("Equities", "GOOGL")[3]).toBe("$100.00");
   });
 
-  it("leaves out a position that only exists in an older reading", async () => {
+  it("leaves out a holding that only exists in an older reading", async () => {
     await renderPage("ind");
 
     // Sold between the two syncs: in last night's snapshot, gone from this
@@ -261,7 +288,7 @@ describe("which rows the page is built from", () => {
 });
 
 describe("the summary strip", () => {
-  it("totals market value and cost basis across every position", async () => {
+  it("totals market value and cost basis across every holding", async () => {
     await renderPage("ind");
 
     expect(figure("Market value")).toBe("$1,140.00");
@@ -321,7 +348,7 @@ describe("the sections the ledger is cut into", () => {
     const header = within(section("Equities")).getByRole("heading", { name: "Equities" })
       .parentElement?.parentElement;
 
-    expect(header?.textContent).toContain("2 positions");
+    expect(header?.textContent).toContain("2 holdings");
     expect(header?.textContent).toContain("$450.00");
     expect(header?.textContent).toContain("+$50.00 (+12.5%)");
   });
@@ -338,7 +365,7 @@ describe("the sections the ledger is cut into", () => {
     expect(header?.textContent).toContain("$0.00 (0.0%)");
   });
 
-  it("gives each position its value, gain and weight in the account", async () => {
+  it("gives each holding its value, gain and weight in the account", async () => {
     await renderPage("ind");
 
     expect(cellsFor("Equities", "AMZN")).toEqual([
@@ -355,7 +382,7 @@ describe("the sections the ledger is cut into", () => {
 });
 
 describe("sorting a section", () => {
-  it("opens every section on its largest position", async () => {
+  it("opens every section on its largest holding", async () => {
     await renderPage("ind");
 
     expect(symbolsIn("Equities")).toEqual(["AMZN", "GOOGL"]);
@@ -404,7 +431,7 @@ describe("sorting a section", () => {
 });
 
 describe("tax lots", () => {
-  it("shows the lots behind a position that came with them", async () => {
+  it("shows the lots behind a holding that came with them", async () => {
     await renderPage("ind");
 
     fireEvent.click(within(section("Equities")).getByRole("button", { name: "2 lots" }));
@@ -417,7 +444,7 @@ describe("tax lots", () => {
     expect(within(lots).getByText("$60.00")).toBeInTheDocument();
   });
 
-  it("offers nothing to expand on a position the provider sent no lots for", async () => {
+  it("offers nothing to expand on a holding the provider sent no lots for", async () => {
     await renderPage("ind");
 
     expect(
@@ -425,7 +452,7 @@ describe("tax lots", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("says why the lots are missing when no position has them, rather than showing an empty column", async () => {
+  it("says why the lots are missing when no holding has them, rather than showing an empty column", async () => {
     // The normal reading on SnapTrade's Personal plan, which reports average
     // cost only — a page that silently showed no lots would look like one that
     // had lost them.
@@ -434,7 +461,7 @@ describe("tax lots", () => {
     expect(screen.getByText(/No per-lot cost basis in this reading/)).toBeInTheDocument();
   });
 
-  it("stays quiet about lots when at least one position has them", async () => {
+  it("stays quiet about lots when at least one holding has them", async () => {
     await renderPage("ind");
 
     expect(screen.queryByText(/No per-lot cost basis in this reading/)).not.toBeInTheDocument();
@@ -499,17 +526,21 @@ describe("when there is nothing to show", () => {
   });
 });
 
-describe("positions the provider priced incompletely", () => {
-  it("keeps an unpriced position out of the total and says the total is short of it", async () => {
-    stubServer({ rows: [...holdings, seed("PRIV", "equity", "10", "5", null)] });
+describe("holdings the provider priced incompletely", () => {
+  it("keeps an unpriced holding out of the total and says the total is short of it", async () => {
+    stubServer({
+      rows: [...holdings, seed({ symbol: "PRIV", quantity: "10", cost: "5", price: null })],
+    });
     await renderPage("ind");
 
     expect(figure("Market value")).toBe("$1,140.00");
-    expect(screen.getByText(/1 of 6 positions came without a market price/)).toBeInTheDocument();
+    expect(screen.getByText(/1 of 6 holdings came without a market price/)).toBeInTheDocument();
   });
 
   it("shows a missing figure as absent rather than as zero", async () => {
-    stubServer({ rows: [...holdings, seed("PRIV", "equity", "10", "5", null)] });
+    stubServer({
+      rows: [...holdings, seed({ symbol: "PRIV", quantity: "10", cost: "5", price: null })],
+    });
     await renderPage("ind");
 
     expect(cellsFor("Equities", "PRIV")).toEqual([
@@ -522,5 +553,40 @@ describe("positions the provider priced incompletely", () => {
       "—",
       "—",
     ]);
+  });
+});
+
+describe("what the totals quietly assume", () => {
+  it("warns when the holdings are priced in more than one currency", async () => {
+    // v1 has one currency, so this should never fire. Dropping the symbol makes
+    // the figure honest about its units and not about its arithmetic — the sum
+    // underneath still added two currencies together — so it is said outright.
+    stubServer({
+      rows: [
+        ...holdings,
+        seed({ symbol: "SHOP", quantity: "1", cost: "80", price: "90", currency: "CAD" }),
+      ],
+    });
+
+    await renderPage("ind");
+
+    expect(screen.getByText(/priced in more than one currency/)).toBeInTheDocument();
+  });
+
+  it("stays quiet when every holding reports the same currency", async () => {
+    await renderPage("ind");
+
+    expect(screen.queryByText(/priced in more than one currency/)).not.toBeInTheDocument();
+  });
+});
+
+describe("when only some holdings came with lots", () => {
+  it("says how many, rather than leaving the missing buttons to be inferred", async () => {
+    // The fixture has lots on GOOGL alone. Without this line a reader sees an
+    // expander on one row and nothing on the others, and cannot tell whether
+    // the rest have no lots or the page failed to load them.
+    await renderPage("ind");
+
+    expect(screen.getByText(/Lot detail is shown for the 1 of 5 holdings/)).toBeInTheDocument();
   });
 });
