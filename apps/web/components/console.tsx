@@ -70,5 +70,56 @@ export function SegmentedToggle<Option extends string>({
   );
 }
 
+/**
+ * The horizontal rules and their axis labels, shared by every chart the Console
+ * draws.
+ *
+ * Both charts inset their plot by a `padding` and label the axis to its left, so
+ * this is the whole of what they had in common — kept in one place because two
+ * copies would drift in hairline weight and label offset, and the two charts sit
+ * one above the other where that would show.
+ *
+ * Callers pass the geometry's own gridlines, so the rules land exactly where the
+ * data was scaled to.
+ */
+export function ChartGridlines({
+  gridlines,
+  left,
+  right,
+  formatTick,
+}: {
+  gridlines: readonly { y: number; value: number }[];
+  /** Plot edges in screen space — where each rule starts and stops. */
+  left: number;
+  right: number;
+  formatTick: (value: number) => string;
+}) {
+  return (
+    <>
+      {gridlines.map((gridline) => (
+        <g key={gridline.value}>
+          <line
+            x1={left}
+            x2={right}
+            y1={gridline.y}
+            y2={gridline.y}
+            className="stroke-hairline"
+            strokeWidth={1}
+          />
+          <text
+            x={left - 10}
+            y={gridline.y + 4}
+            textAnchor="end"
+            fontSize={12}
+            className="fill-muted tabular-nums"
+          >
+            {formatTick(gridline.value)}
+          </text>
+        </g>
+      ))}
+    </>
+  );
+}
+
 export const consoleButtonClassName =
   "border-hairline bg-panel-2 text-ink hover:border-accent w-full rounded-md border px-3 py-2 text-[13px] disabled:opacity-50";

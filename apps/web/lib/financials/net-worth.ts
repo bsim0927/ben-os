@@ -56,6 +56,39 @@ export type NetWorthEquation = {
   total: number;
 };
 
+/**
+ * `accountId -> day -> closing balance`, the last snapshot of a day winning.
+ *
+ * Exported because the balance bridge opens and closes on the same reading this
+ * series is built from, and two implementations of "an account's balance on a
+ * day" is exactly the drift `day.ts` exists to prevent — a bridge that ended on
+ * a different figure than the chart it sits under would look like a sync bug.
+ *
+ * Accounts are polled several times a day and each reports its own
+ * `balance-date`, so the day rather than the snapshot is the unit (ADR 0006).
+ * Unrecognised accounts are the caller's to filter: net worth drops them, and
+ * the bridge never asks about them.
+ */
+export function closingBalancesByDay(
+  snapshots: readonly SnapshotInput[],
+): Map<string, Map<string, number>> {
+  const closingBalances = new Map<string, Map<string, number>>();
+
+  for (const snapshot of [...snapshots].sort(byBalanceDate)) {
+    const day = utcDay(snapshot.balanceDate);
+    const balance = toNumber(snapshot.balance);
+
+    if (day === null || balance === null) continue;
+
+    const perDay = closingBalances.get(snapshot.accountId) ?? new Map<string, number>();
+
+    perDay.set(day, balance);
+    closingBalances.set(snapshot.accountId, perDay);
+  }
+
+  return closingBalances;
+}
+
 export function buildNetWorthSeries({
   accounts,
   snapshots,
@@ -64,28 +97,20 @@ export function buildNetWorthSeries({
   snapshots: readonly SnapshotInput[];
 }): NetWorthPoint[] {
   const known = new Map(accounts.map((account) => [account.id, account]));
+  const closingBalances = closingBalancesByDay(
+    snapshots.filter((snapshot) => known.has(snapshot.accountId)),
+  );
 
-  /** `accountId -> day -> closing balance`, last snapshot of the day winning. */
-  const closingBalances = new Map<string, Map<string, number>>();
   /** The last day each account reported at all — where a closed account's history ends. */
   const lastReportedDay = new Map<string, string>();
   const days = new Set<string>();
 
-  for (const snapshot of [...snapshots].sort(byBalanceDate)) {
-    if (!known.has(snapshot.accountId)) continue;
+  for (const [accountId, perDay] of closingBalances) {
+    const reported = [...perDay.keys()].sort();
 
-    const day = utcDay(snapshot.balanceDate);
-    const balance = toNumber(snapshot.balance);
-
-    if (day === null || balance === null) continue;
-
-    days.add(day);
-    lastReportedDay.set(snapshot.accountId, day);
-
-    const perDay = closingBalances.get(snapshot.accountId) ?? new Map<string, number>();
-
-    perDay.set(day, balance);
-    closingBalances.set(snapshot.accountId, perDay);
+    for (const day of reported) days.add(day);
+    // Day strings sort lexicographically, so the last is the latest.
+    lastReportedDay.set(accountId, reported[reported.length - 1]);
   }
 
   const carried = new Map<string, number>();
