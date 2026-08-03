@@ -62,6 +62,18 @@ describe("destructive guards", () => {
     expect(await countRows("public.financials_transaction")).toBe(1);
   });
 
+  it("arms every financials table, including the ones added after the guards", async () => {
+    // The guards are per-table triggers attached by a migration, so a table
+    // landing later is a table with no tripwire unless its own migration
+    // remembers to attach them. Holdings snapshots are as unrecoverable as
+    // transactions — SnapTrade serves the current reading, not past ones.
+    for (const table of ["public.financials_holding", "public.financials_security"]) {
+      await expect(asSuperuser((query) => query(`truncate ${table} cascade`))).rejects.toThrow(
+        /Refusing to truncate/,
+      );
+    }
+  });
+
   it("refuses to drop a financials table", async () => {
     await expect(
       asSuperuser((query) => query("drop table public.financials_balance_snapshot")),

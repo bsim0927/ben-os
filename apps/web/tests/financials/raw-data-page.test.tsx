@@ -113,6 +113,63 @@ describe("the financials raw-data view", () => {
     expect(within(row!).getByText("1,500.00")).toBeInTheDocument();
   });
 
+  it("lists a holding with the numbers that make its sync checkable", async () => {
+    stubSupabase({
+      financials_holding: ok([
+        {
+          id: "h1",
+          quantity: "12.5",
+          average_cost_basis: "280.78",
+          market_price: "291.44",
+          currency: "USD",
+          as_of: "2026-08-02T06:30:00Z",
+          financials_account: { name: "Individual (5008)" },
+          financials_security: {
+            symbol: "VTI",
+            name: "Vanguard Total Stock Market ETF",
+            security_type: "etf",
+          },
+        },
+      ]),
+    });
+
+    await renderPage();
+
+    const row = screen.getByText("VTI").closest("tr");
+
+    expect(within(row!).getByText("Individual (5008)")).toBeInTheDocument();
+    expect(within(row!).getByText("12.5")).toBeInTheDocument();
+    expect(within(row!).getByText("$280.78")).toBeInTheDocument();
+    expect(within(row!).getByText("$291.44")).toBeInTheDocument();
+    // quantity × price, derived at read time rather than stored (ADR 0004).
+    expect(within(row!).getByText("$3,643.00")).toBeInTheDocument();
+  });
+
+  it("shows a holding's own as-of, which is the provider's reading and not the poll's", async () => {
+    stubSupabase({
+      financials_holding: ok([
+        {
+          id: "h1",
+          quantity: "1",
+          average_cost_basis: null,
+          market_price: null,
+          currency: null,
+          as_of: "2026-08-02T06:30:00Z",
+          financials_account: { name: "Individual (5008)" },
+          financials_security: { symbol: "VTI", name: null, security_type: "etf" },
+        },
+      ]),
+    });
+
+    await renderPage();
+
+    const row = screen.getByText("VTI").closest("tr");
+
+    expect(within(row!).getByText("2026-08-02 06:30")).toBeInTheDocument();
+    // A missing price is not a zero, and a value cannot be derived without one.
+    expect(within(row!).getAllByText("—").length).toBeGreaterThanOrEqual(3);
+  });
+
   it("says so plainly when nothing has synced yet", async () => {
     stubSupabase({});
 
@@ -121,6 +178,7 @@ describe("the financials raw-data view", () => {
     expect(screen.getByText("No accounts synced yet.")).toBeInTheDocument();
     expect(screen.getByText("No transactions yet.")).toBeInTheDocument();
     expect(screen.getByText("No balance snapshots yet.")).toBeInTheDocument();
+    expect(screen.getByText("No holdings synced yet.")).toBeInTheDocument();
   });
 
   it("surfaces a read failure instead of rendering empty tables that look fine", async () => {

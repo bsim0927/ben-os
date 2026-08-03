@@ -1,7 +1,6 @@
+import { authorizeApiRequest } from "@/lib/api-auth";
 import { claimSetupToken } from "@/lib/financials/simplefin";
-import { isAuthorizedEmail } from "@/lib/auth";
 import { messageFor } from "@/lib/errors";
-import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,16 +19,9 @@ export const dynamic = "force-dynamic";
  * rest of the console means no second credential path exists to get wrong.
  */
 export async function POST(request: Request): Promise<Response> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const gate = await authorizeApiRequest();
 
-  // Re-checked here rather than trusted from the proxy, for the reason the shell
-  // layout re-checks: a routing mistake should cost a 401, not a bank credential.
-  if (!user || !isAuthorizedEmail(user.email)) {
-    return new Response(null, { status: 401 });
-  }
+  if (gate) return gate;
 
   let setupToken: unknown;
 

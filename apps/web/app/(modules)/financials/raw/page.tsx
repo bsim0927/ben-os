@@ -3,8 +3,8 @@ import { formatAmount, formatTimestamp } from "@/lib/financials/format";
 import { createClient } from "@/lib/supabase/server";
 
 /**
- * The raw data the SimpleFIN sync produced — accounts, balance snapshots, and
- * transactions, as rows.
+ * The raw data the syncs produced — accounts, balance snapshots, transactions,
+ * and the per-security holdings SnapTrade adds on top of them, as rows.
  *
  * Deliberately unfinished, and no longer the module's front door — the overview
  * is. Its job is to make sync correctness *visible*: that an overlapping poll
@@ -54,12 +54,23 @@ type TransactionRow = {
   financials_account: { name: string } | null;
 };
 
+type HoldingRow = {
+  id: string;
+  quantity: number | string;
+  average_cost_basis: number | string | null;
+  market_price: number | string | null;
+  currency: string | null;
+  as_of: string;
+  financials_account: { name: string } | null;
+  financials_security: { symbol: string; name: string | null; security_type: string } | null;
+};
+
 export default async function FinancialsRawData() {
   const supabase = await createClient();
 
-  // Issued together: three independent reads, and awaiting them in sequence
+  // Issued together: four independent reads, and awaiting them in sequence
   // would make the page as slow as their sum for no reason.
-  const [accounts, snapshots, transactions] = await Promise.all([
+  const [accounts, snapshots, transactions, holdings] = await Promise.all([
     supabase
       .from("financials_account")
       .select(
@@ -81,17 +92,30 @@ export default async function FinancialsRawData() {
       .order("posted", { ascending: false })
       .limit(RECENT_LIMIT)
       .returns<TransactionRow[]>(),
+    // Snapshot rows as they were written, newest first — not a `DISTINCT ON`
+    // reduction to current holdings. Seeing the same security twice under two
+    // `as_of` values *is* the check that this table appends rather than upserts,
+    // and collapsing it here would hide the one thing this page is for.
+    supabase
+      .from("financials_holding")
+      .select(
+        "id, quantity, average_cost_basis, market_price, currency, as_of, financials_account ( name ), financials_security ( symbol, name, security_type )",
+      )
+      .order("as_of", { ascending: false })
+      .limit(RECENT_LIMIT)
+      .returns<HoldingRow[]>(),
   ]);
 
-  const error = accounts.error ?? snapshots.error ?? transactions.error;
+  const error = accounts.error ?? snapshots.error ?? transactions.error ?? holdings.error;
 
   return (
     <div className="flex flex-col gap-9">
       <section>
         <h1 className="text-ink text-[15px] font-medium">Raw sync data</h1>
         <p className="text-muted mt-1 text-[13px]">
-          What the scheduled SimpleFIN poll has written. Unstyled on purpose — this is the check
-          that sync is correct, not the Financials module&apos;s real surface.
+          What the scheduled SimpleFIN poll and SnapTrade holdings pull have written. Unstyled on
+          purpose — this is the check that sync is correct, not the Financials module&apos;s real
+          surface.
         </p>
       </section>
 
@@ -147,8 +171,60 @@ export default async function FinancialsRawData() {
           empty="No transactions yet."
         />
       </Section>
+
+      <Section label={`Holdings — ${RECENT_LIMIT} most recent snapshots`}>
+        <Table
+          columns={["As of", "Account", "Symbol", "Type", "Quantity", "Avg cost", "Price", "Value"]}
+          rows={(holdings.data ?? []).map((row) => [
+            formatTimestamp(row.as_of),
+            row.financials_account?.name ?? "—",
+            <span key="s" title={row.financials_security?.name ?? undefined}>
+              {row.financials_security?.symbol ?? "—"}
+            </span>,
+            row.financials_security?.security_type ?? "—",
+            <Quantity key="q" value={row.quantity} />,
+            <OptionalAmount
+              key="c"
+              value={row.average_cost_basis}
+              currency={row.currency ?? undefined}
+            />,
+            <OptionalAmount
+              key="p"
+              value={row.market_price}
+              currency={row.currency ?? undefined}
+            />,
+            // Derived here rather than stored, per ADR 0004 decision 3 — a
+            // second stored column could only drift from the first.
+            <OptionalAmount
+              key="v"
+              value={marketValue(row)}
+              currency={row.currency ?? undefined}
+            />,
+          ])}
+          empty="No holdings synced yet."
+        />
+      </Section>
     </div>
   );
+}
+
+/** `quantity × market_price`, or null when the price is missing rather than zero. */
+function marketValue(row: HoldingRow): number | null {
+  if (row.market_price === null) return null;
+
+  const quantity = Number.parseFloat(String(row.quantity));
+  const price = Number.parseFloat(String(row.market_price));
+
+  return Number.isFinite(quantity) && Number.isFinite(price) ? quantity * price : null;
+}
+
+/**
+ * Share counts, not money: no currency symbol and no forced two decimals, since
+ * a fractional position is routinely 0.00123456 and rounding it to cents would
+ * print it as zero.
+ */
+function Quantity({ value }: { value: number | string }) {
+  return <span className="tabular-nums">{String(value)}</span>;
 }
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
