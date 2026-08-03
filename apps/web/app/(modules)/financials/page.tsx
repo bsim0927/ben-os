@@ -1,7 +1,9 @@
 import Link from "next/link";
 
+import { BridgePanels } from "@/components/bridge-panels";
 import { FlowPanels } from "@/components/flow-panels";
 import { NetWorthHero } from "@/components/net-worth-hero";
+import type { BridgeAccountRef, BridgeTransactionInput } from "@/lib/financials/bridge";
 import type { CategoryRef, FlowAccountRef, FlowTransactionInput } from "@/lib/financials/flow";
 import {
   buildNetWorthSeries,
@@ -12,12 +14,18 @@ import { createClient } from "@/lib/supabase/server";
 
 /**
  * The Financials module's front door: net worth as a trend, the equation saying
- * which accounts it is the sum of, and a flow panel per depository account.
+ * which accounts it is the sum of, a flow panel per depository account, and a
+ * balance bridge per investment account.
  *
  * Everything shown here is derived at read time — net worth from
- * `financials_balance_snapshot`, flow from `financials_transaction` — so there
- * is no stored figure to go stale, and each surface's several renderings come
- * from one series rather than from calculations that have to be kept in step.
+ * `financials_balance_snapshot`, flow from `financials_transaction`, the bridge
+ * from both — so there is no stored figure to go stale, and each surface's
+ * several renderings come from one series rather than from calculations that
+ * have to be kept in step.
+ *
+ * The two panel sections partition the accounts on `kind` (ADR 0003): every
+ * account gets exactly one framing, and which one is the user's assertion
+ * because no provider signals it.
  */
 
 export const dynamic = "force-dynamic";
@@ -124,6 +132,26 @@ export default async function FinancialsOverview() {
       currency: row.currency,
     }));
 
+  // The other half of the same `kind` split: an investment account gets the
+  // balance bridge, and never the flow panel's category picker — its activity is
+  // auto-tagged from the description instead (spec #32).
+  const bridgeAccounts: BridgeAccountRef[] = (accounts.data ?? [])
+    .filter((row) => row.kind === "investment")
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      status: row.status === "closed" ? "closed" : "active",
+      currency: row.currency,
+    }));
+
+  const bridgeTransactions: BridgeTransactionInput[] = (transactions.data ?? []).map((row) => ({
+    id: row.id,
+    accountId: row.account_id,
+    posted: row.posted,
+    description: row.description,
+    amount: row.amount,
+  }));
+
   const flowTransactions: FlowTransactionInput[] = (transactions.data ?? []).map((row) => ({
     id: row.id,
     accountId: row.account_id,
@@ -165,6 +193,13 @@ export default async function FinancialsOverview() {
         categories={categoryRefs}
         today={new Date().toISOString()}
         truncated={(transactions.data ?? []).length >= TRANSACTION_LIMIT}
+      />
+
+      <BridgePanels
+        accounts={bridgeAccounts}
+        transactions={bridgeTransactions}
+        snapshots={snapshotInputs}
+        today={new Date().toISOString()}
       />
 
       <p className="border-hairline text-muted border-t pt-3 text-[13px]">

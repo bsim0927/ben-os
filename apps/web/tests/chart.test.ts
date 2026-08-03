@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { areaChartGeometry, type ChartDatum } from "@/lib/chart";
+import {
+  areaChartGeometry,
+  waterfallGeometry,
+  type ChartDatum,
+  type WaterfallBarInput,
+} from "@/lib/chart";
 
 const box = {
   width: 100,
@@ -113,5 +118,146 @@ describe("areaChartGeometry", () => {
     expect(geometry.points).toEqual([]);
     expect(geometry.endpoint).toBeNull();
     expect(geometry.line).toBe("");
+  });
+});
+
+describe("waterfallGeometry", () => {
+  /** Six columns across 120px of plot leaves each one a round 20 wide. */
+  const wide = {
+    width: 120,
+    height: 100,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    gap: 0,
+  };
+
+  /** A bridge that starts at 100, gains 40, loses 20, and ends at 120. */
+  const bridge: WaterfallBarInput[] = [
+    { from: 0, to: 100, total: true },
+    { from: 100, to: 140, total: false },
+    { from: 140, to: 120, total: false },
+    { from: 0, to: 120, total: true },
+  ];
+
+  it("gives every input a bar, evenly spaced across the plot", () => {
+    const { bars } = waterfallGeometry({ bars: bridge, ...wide, width: 80 });
+
+    expect(bars).toHaveLength(4);
+    expect(bars.map((bar) => bar.x)).toEqual([0, 20, 40, 60]);
+    expect(bars.every((bar) => bar.width === 20)).toBe(true);
+  });
+
+  it("takes the gap out of the bars rather than out of the plot", () => {
+    const { bars } = waterfallGeometry({ bars: bridge, ...wide, width: 80, gap: 4 });
+
+    expect(bars.map((bar) => bar.width)).toEqual([17, 17, 17, 17]);
+    expect(bars[3].x + bars[3].width).toBe(80);
+  });
+
+  it("anchors a total bar to the plot floor, so it reads as a balance", () => {
+    const { bars, floor } = waterfallGeometry({ bars: bridge, ...wide });
+
+    expect(bars[0].y + bars[0].height).toBe(floor);
+    expect(bars[3].y + bars[3].height).toBe(floor);
+  });
+
+  it("floats a change bar between the balances either side of it", () => {
+    const { bars } = waterfallGeometry({ bars: bridge, ...wide });
+
+    // The rise from 100 sits on top of where the start bar ends.
+    expect(bars[1].y + bars[1].height).toBe(bars[0].y);
+    // And the fall that follows starts where the rise left off.
+    expect(bars[2].y).toBe(bars[1].y);
+  });
+
+  it("draws a rise and a fall of the same size at the same height", () => {
+    const { bars } = waterfallGeometry({
+      bars: [
+        { from: 100, to: 140, total: false },
+        { from: 140, to: 100, total: false },
+      ],
+      ...wide,
+    });
+
+    expect(bars[0].height).toBe(bars[1].height);
+  });
+
+  it("says which way each change went, since the height alone cannot", () => {
+    const { bars } = waterfallGeometry({ bars: bridge, ...wide });
+
+    expect(bars.map((bar) => bar.direction)).toEqual(["total", "up", "down", "total"]);
+  });
+
+  it("leaves a hairline where a segment came to nothing, rather than no bar at all", () => {
+    // A period with no fees is a fact about the period; a segment that vanished
+    // would read as one the bridge forgot to draw.
+    const { bars } = waterfallGeometry({
+      bars: [{ from: 100, to: 100, total: false }, ...bridge],
+      ...wide,
+    });
+
+    expect(bars[0].height).toBeGreaterThan(0);
+  });
+
+  it("joins each bar's head to the foot of the next", () => {
+    const { bars, connectors } = waterfallGeometry({ bars: bridge, ...wide });
+
+    expect(connectors).toHaveLength(3);
+    expect(connectors[0]).toMatchObject({ x1: bars[0].x + bars[0].width, x2: bars[1].x });
+    // The connector sits at the running balance the two bars share.
+    expect(connectors[0].y).toBe(bars[0].y);
+    expect(connectors[1].y).toBe(bars[1].y);
+  });
+
+  it("leaves room below the lowest balance so a total bar is never a sliver", () => {
+    // Every value in a brokerage bridge is within a few percent of the others,
+    // so a floor at the minimum would flatten Start and End to nothing.
+    const { bars, floor } = waterfallGeometry({
+      bars: [
+        { from: 0, to: 10_000, total: true },
+        { from: 10_000, to: 10_500, total: false },
+        { from: 0, to: 10_500, total: true },
+      ],
+      ...wide,
+    });
+
+    expect(bars[0].height).toBeGreaterThan(floor * 0.1);
+  });
+
+  it("labels the axis with round numbers", () => {
+    const { gridlines } = waterfallGeometry({
+      bars: [
+        { from: 0, to: 1_020, total: true },
+        { from: 0, to: 1_480, total: true },
+      ],
+      ...wide,
+    });
+
+    expect(gridlines.map((line) => line.value)).toContain(1_400);
+    expect(gridlines.every((line) => line.value % 100 === 0)).toBe(true);
+  });
+
+  it("keeps every bar inside the box it was given", () => {
+    const { bars } = waterfallGeometry({
+      bars: bridge,
+      width: 120,
+      height: 100,
+      padding: { top: 10, right: 5, bottom: 20, left: 15 },
+      gap: 2,
+    });
+
+    for (const bar of bars) {
+      expect(bar.x).toBeGreaterThanOrEqual(15);
+      expect(bar.x + bar.width).toBeLessThanOrEqual(115);
+      expect(bar.y).toBeGreaterThanOrEqual(10);
+      expect(bar.y + bar.height).toBeLessThanOrEqual(80);
+    }
+  });
+
+  it("has nothing to draw with no bars at all", () => {
+    const geometry = waterfallGeometry({ bars: [], ...wide });
+
+    expect(geometry.bars).toEqual([]);
+    expect(geometry.connectors).toEqual([]);
+    expect(geometry.gridlines).toEqual([]);
   });
 });

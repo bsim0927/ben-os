@@ -59,6 +59,21 @@ _Avoid_: Other, Misc — both read as a category someone chose, which is the one
 The income/expenses/net framing a depository Account gets, derived from its transactions over a range: what came in, what went out, and where it went. The counterpart to the balance-bridge framing an investment Account gets, and the reason `financials_account.kind` is a column at all — a chart of a credit card's balance says it is at −$2,309, and only flow says why.
 _Avoid_: Cash flow statement (an accounting artefact with a fixed shape this isn't), spending (only half of it — flow includes income), day-to-day account (the thing is an Account with `kind = 'depository'`; it doesn't need a second name).
 
+**Balance bridge**:
+The Start → Contributions → Dividends → Growth → Fees → End framing an investment Account gets, explaining why its balance moved over a period. The counterpart to Flow, and the other half of the reason `financials_account.kind` is a column. Its two ends come from Balance snapshots and its middle from Activity tags, so it is the one surface that reads both tables at once. See [ADR 0008](docs/adr/0008-fidelity-balance-bridge.md).
+_Avoid_: Waterfall (the chart shape, not the thing being shown), performance, returns — a bridge attributes a balance change and deliberately does not compute a rate of return.
+
+**Activity tag**:
+What a brokerage transaction turns out to be — Contribution, Withdrawal, Dividend, or Fee — derived at read time from its description, never stored and never user-set. Most rows get no tag at all: a reinvestment, buy, or sell moves value inside the account and belongs to no Segment. Direction comes from the tag rather than from the amount's sign, which on Fidelity's feed is unreliable in both directions (ADR 0008, decision 3).
+_Avoid_: Category — a Category is user-assigned and lives in a table; an Activity tag is derived and lives nowhere. The distinction is the whole point of an investment account having no category picker.
+
+**Growth**:
+The Balance bridge's residual — the balance change that Contributions, Dividends and Fees do not account for. Defined as what is left over rather than measured, because nothing posts to `financials_transaction` when a holding's price moves. This is what makes the bridge reconcile exactly for any input, so a mis-tagged row shifts money between segments and never falsifies the total.
+_Avoid_: Gain, return, performance — those imply a measured figure; Growth is explicitly the unexplained remainder, and says so on the page.
+
+**Segment**:
+One step of a Balance bridge. Start and End are balances drawn from the axis; the four between them are signed changes that float. Always six, always in that order.
+
 **Security**:
 A tradable financial instrument (stock, ETF, mutual fund, etc.), identified by ticker symbol. Provider-agnostic reference data, shared across every Holding that references it.
 _Avoid_: Ticker, symbol, instrument — "Security" is the entity; a ticker/symbol is one of its fields.
