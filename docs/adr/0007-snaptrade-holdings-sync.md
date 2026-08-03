@@ -64,6 +64,14 @@ restated here.
    that idempotency is lost for those rows. A reading with an approximate
    timestamp is worth more than no reading.
 
+   Which of the two happened is **reported** per account (`asOfSource`), and
+   that is not decoration. The field name comes from the generated SDK's
+   typings, not from prose, and every fixture in the suite is hand-written to
+   match the code — so if SnapTrade ever renames or drops it, `as_of` would
+   quietly revert to this app's clock, idempotency would stop working, and the
+   tests would all still pass. Reporting the source puts that failure in the
+   cron response body, where the first real run shows it.
+
 4. **The unit of work is an account, not a connection.** SnapTrade serves
    holdings per account, so a broken account is one failed HTTP call among
    several. One transaction and one `try` each, so a brokerage that answers for
@@ -119,3 +127,8 @@ restated here.
 - Quantities and prices arrive as JSON numbers, so they are through a double
   before this app sees them; `numeric` columns stop anything _further_ being
   lost, but cannot recover precision the wire format never carried.
+- A position's quantity comes from `units` only. `fractional_units` sits beside
+  it in the protocol with no documentation this app can check — an alternative
+  total, or the fractional part of `units` — and under the second reading,
+  falling back to it would store 0.5 shares as an entire position. A position
+  reporting no usable `units` is skipped and counted rather than guessed at.

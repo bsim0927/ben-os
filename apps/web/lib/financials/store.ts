@@ -80,7 +80,6 @@ export type SnapTradeConnectionInput = {
 };
 
 export type SnapTradeConnection = {
-  connectionId: string;
   authorizationId: string;
   accountLinks: Record<string, string>;
 };
@@ -266,7 +265,7 @@ export function createFinancialsStore(query: QueryFn) {
      */
     async readSnapTradeConnection(): Promise<SnapTradeConnection | null> {
       const { rows } = await query(
-        `select id, provider_conn_id, extra
+        `select provider_conn_id, extra
            from public.financials_connection
           where provider = $1
           order by created_at
@@ -280,7 +279,6 @@ export function createFinancialsStore(query: QueryFn) {
       const accounts = extra.accounts;
 
       return {
-        connectionId: rows[0].id as string,
         authorizationId: rows[0].provider_conn_id as string,
         // Tolerated rather than trusted: this column is jsonb, so a hand-edited
         // row can hold anything, and a malformed map should mean "nothing is

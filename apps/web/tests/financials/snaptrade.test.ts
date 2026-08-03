@@ -202,14 +202,20 @@ describe("holdingsAsOf", () => {
         account({ sync_status: { holdings: { last_successful_sync: "2026-08-02T06:30:00Z" } } }),
         fallback,
       ),
-    ).toEqual(new Date("2026-08-02T06:30:00Z"));
+    ).toEqual({ at: new Date("2026-08-02T06:30:00Z"), source: "provider" });
   });
 
   it("falls back to the run's own instant when the provider reports none", () => {
     // Losing the idempotency a provider timestamp buys is worth less than losing
     // the reading: without an `as_of` there is no row at all.
-    expect(holdingsAsOf(account({ sync_status: {} }), fallback)).toEqual(fallback);
-    expect(holdingsAsOf(account({ sync_status: undefined }), fallback)).toEqual(fallback);
+    expect(holdingsAsOf(account({ sync_status: {} }), fallback)).toEqual({
+      at: fallback,
+      source: "run",
+    });
+    expect(holdingsAsOf(account({ sync_status: undefined }), fallback)).toEqual({
+      at: fallback,
+      source: "run",
+    });
   });
 
   it("falls back rather than trusting a timestamp it cannot parse", () => {
@@ -218,7 +224,16 @@ describe("holdingsAsOf", () => {
         account({ sync_status: { holdings: { last_successful_sync: "not a date" } } }),
         fallback,
       ),
-    ).toEqual(fallback);
+    ).toEqual({ at: fallback, source: "run" });
+  });
+
+  it("says which of the two happened, so a silent fallback cannot hide", () => {
+    // The whole reason this returns a source. If SnapTrade renamed the field,
+    // `as_of` would quietly become this app's clock, idempotency would stop
+    // working, and every hand-written fixture here would still pass. Reporting
+    // it puts that in the cron response body instead.
+    expect(holdingsAsOf(account(), fallback).source).toBe("provider");
+    expect(holdingsAsOf(account({ sync_status: {} }), fallback).source).toBe("run");
   });
 });
 

@@ -1,11 +1,10 @@
-import { isAuthorizedEmail } from "@/lib/auth";
+import { authorizeApiRequest } from "@/lib/api-auth";
 import { messageFor } from "@/lib/errors";
 import {
   createSnapTradeClient,
   readSnapTradeCredentials,
   SNAPTRADE_FIDELITY_SLUG,
 } from "@/lib/financials/snaptrade";
-import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,17 +24,9 @@ export const dynamic = "force-dynamic";
  * `/api/financials/snaptrade/link` records.
  */
 export async function POST(request: Request): Promise<Response> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const gate = await authorizeApiRequest();
 
-  // Re-checked here rather than trusted from the proxy, for the same reason the
-  // claim route re-checks: a routing mistake should cost a 401, not an open door
-  // to linking a brokerage account.
-  if (!user || !isAuthorizedEmail(user.email)) {
-    return new Response(null, { status: 401 });
-  }
+  if (gate) return gate;
 
   const lookup = readSnapTradeCredentials();
 

@@ -298,15 +298,31 @@ async function failureMessage(response: Response, method: string, path: string):
  * The fallback is the run's own instant, and it costs exactly that idempotency.
  * That is the right trade: a reading with a slightly-wrong timestamp is worth
  * more than no reading at all.
+ *
+ * Which of the two happened is returned rather than swallowed, and that is the
+ * point of the return shape. The field name below is taken from the generated
+ * SDK's own typings, not from prose; if SnapTrade ever renames or drops it, the
+ * fallback would quietly restore `now()`, idempotency would silently stop
+ * working, and every test here would still pass because every fixture is
+ * hand-written. Reporting the source puts that failure in the cron response
+ * body, where the first real run shows it.
  */
-export function holdingsAsOf(account: SnapTradeAccount | undefined, fallback: Date): Date {
+export type HoldingsAsOf = {
+  at: Date;
+  /** `run` means the provider reported no usable timestamp — see above. */
+  source: "provider" | "run";
+};
+
+export function holdingsAsOf(account: SnapTradeAccount | undefined, fallback: Date): HoldingsAsOf {
   const reported = account?.sync_status?.holdings?.last_successful_sync;
 
-  if (typeof reported !== "string") return fallback;
+  if (typeof reported !== "string") return { at: fallback, source: "run" };
 
   const parsed = new Date(reported);
 
-  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+  return Number.isNaN(parsed.getTime())
+    ? { at: fallback, source: "run" }
+    : { at: parsed, source: "provider" };
 }
 
 /** The security a position is a position *in*, dug out of the double nesting. */

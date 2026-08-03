@@ -1,4 +1,4 @@
-import { isAuthorizedEmail } from "@/lib/auth";
+import { authorizeApiRequest } from "@/lib/api-auth";
 import { messageFor } from "@/lib/errors";
 import { financialsPool, withAuthorizedSession } from "@/lib/financials/db";
 import {
@@ -7,7 +7,6 @@ import {
   type SnapTradeAccount,
 } from "@/lib/financials/snaptrade";
 import { createFinancialsStore } from "@/lib/financials/store";
-import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +35,7 @@ export const dynamic = "force-dynamic";
 type LinkRequest = { links?: unknown };
 
 export async function GET(): Promise<Response> {
-  const gate = await authorize();
+  const gate = await authorizeApiRequest();
 
   if (gate) return gate;
 
@@ -75,7 +74,7 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  const gate = await authorize();
+  const gate = await authorizeApiRequest();
 
   if (gate) return gate;
 
@@ -226,13 +225,4 @@ function describe(account: SnapTradeAccount) {
     brokerageAuthorization: account.brokerage_authorization ?? null,
     holdingsLastSyncedAt: account.sync_status?.holdings?.last_successful_sync ?? null,
   };
-}
-
-async function authorize(): Promise<Response | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  return !user || !isAuthorizedEmail(user.email) ? new Response(null, { status: 401 }) : null;
 }

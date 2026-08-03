@@ -91,6 +91,20 @@ async function runSync(
   );
 }
 
+/** A second security, so a fixture can hold two distinct tickers. */
+function nvidia() {
+  return {
+    symbol: {
+      id: "sym-nvda",
+      symbol: "NVDA",
+      raw_symbol: "NVDA",
+      description: "NVIDIA Corporation",
+      currency: { code: "USD" },
+      type: { code: "cs" },
+    },
+  };
+}
+
 beforeEach(resetFinancials);
 afterAll(closeTestPool);
 
@@ -110,6 +124,9 @@ describe("first holdings sync", () => {
       positions: 1,
       holdingsInserted: 1,
       asOf: new Date(AS_OF).toISOString(),
+      // Stamped from SnapTrade's own reading, not this run's clock — which is
+      // what makes the repeat-sync case below write nothing.
+      asOfSource: "provider",
     });
 
     const { rows } = await asSuperuser((query) =>
@@ -260,6 +277,27 @@ describe("partial failure", () => {
     });
 
     expect(result.accounts[0]).toMatchObject({ positions: 3, holdingsInserted: 1, skipped: 2 });
+    expect(await countRows("public.financials_holding")).toBe(1);
+  });
+
+  it("skips a quantity it cannot store, instead of failing the whole account", async () => {
+    // `quantity` is `not null`, so a value that converts to null would abort the
+    // account's entire insert — one unusable position taking the portfolio with
+    // it. The skip test runs through the same conversion the column gets, so
+    // nothing can pass the guard and still fail the write.
+    const { individual } = await arrangeSimpleFinAccounts();
+    await link({ [FIDELITY_INDIVIDUAL]: individual });
+
+    const result = await runSync({
+      [FIDELITY_INDIVIDUAL]: holdings({
+        positions: [
+          position(),
+          position({ units: "not a number" as unknown as number, symbol: nvidia() }),
+        ],
+      }),
+    });
+
+    expect(result.accounts[0]).toMatchObject({ status: "synced", holdingsInserted: 1, skipped: 1 });
     expect(await countRows("public.financials_holding")).toBe(1);
   });
 });

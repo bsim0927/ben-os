@@ -32,8 +32,15 @@ export type AccountHoldingsResult = {
   /** The `financials_account` row the holdings were attached to. */
   accountId: string;
   status: "synced" | "failed";
-  /** The provider's reading time these holdings were stamped with. */
+  /** The reading time these holdings were stamped with. */
   asOf: string | null;
+  /**
+   * Where `asOf` came from. `run` means SnapTrade reported no usable
+   * `last_successful_sync`, so these rows are keyed on this app's clock and a
+   * retry will write them again — surfaced here because that is otherwise a
+   * silent loss of idempotency.
+   */
+  asOfSource: "provider" | "run" | null;
   /** Positions SnapTrade reported, including any that were skipped. */
   positions: number;
   holdingsInserted: number;
@@ -46,9 +53,13 @@ export type AccountHoldingsResult = {
 export type HoldingsSyncResult = {
   startedAt: string;
   /**
-   * `not-linked` is a resting state, not an error: the Connection Portal flow is
-   * a human sitting at a browser, and until they have finished it there is
-   * nothing for the schedule to do.
+   * Whether there was anything to sync — **not** whether it went well.
+   * `synced` means the job had linked accounts and worked through them; every
+   * one of them can still have failed, and `accounts[].status` is where that
+   * lives. Named for the job's disposition because the alternative it
+   * distinguishes is `not-linked`, which is a resting state rather than an
+   * error: the Connection Portal flow ends at a human in a browser, and until
+   * they have finished it there is nothing for the schedule to do.
    */
   status: "synced" | "not-linked";
   accounts: AccountHoldingsResult[];
@@ -89,14 +100,15 @@ export async function syncSnapTradeHoldings({
       const asOf = holdingsAsOf(holdings.account, now);
 
       const counts = await unitOfWork((query) =>
-        writeHoldings({ store: createFinancialsStore(query), accountId, holdings, asOf }),
+        writeHoldings({ store: createFinancialsStore(query), accountId, holdings, asOf: asOf.at }),
       );
 
       accounts.push({
         snapTradeAccountId,
         accountId,
         status: "synced",
-        asOf: asOf.toISOString(),
+        asOf: asOf.at.toISOString(),
+        asOfSource: asOf.source,
         ...counts,
       });
     } catch (cause) {
@@ -108,6 +120,7 @@ export async function syncSnapTradeHoldings({
         accountId,
         status: "failed",
         asOf: null,
+        asOfSource: null,
         positions: 0,
         holdingsInserted: 0,
         skipped: 0,
@@ -136,13 +149,22 @@ async function writeHoldings({
   for (const position of holdings.positions) {
     const symbol = positionSymbol(position);
     const ticker = symbol?.symbol?.trim();
-    const quantity = position.units ?? position.fractional_units;
+    // `units` alone, deliberately. `fractional_units` sits beside it in the
+    // protocol and its meaning is not documented anywhere this app can check —
+    // an alternative total, or the fractional part of `units`. Under the second
+    // reading, falling back to it would silently store 0.5 shares as the whole
+    // position. `units` is documented as the share count and as allowing
+    // fractions, so it is the only field trusted here.
+    const quantity = decimal(position.units);
 
     // A position with no ticker cannot be keyed to a security, and one with no
-    // quantity is not a position. Both are counted rather than swallowed, so a
-    // provider change that starts dropping either shows up in the sync report
-    // instead of as holdings quietly going missing.
-    if (!ticker || quantity === null || quantity === undefined) {
+    // usable quantity is not a position. Checked through the same conversion
+    // that produces the column value, so nothing can pass this guard and still
+    // convert to null — `quantity` is `not null`, and a null here would fail
+    // the whole account's insert rather than skipping one row. Both are counted
+    // rather than swallowed, so a provider change that starts dropping either
+    // shows up in the sync report instead of as holdings quietly going missing.
+    if (!ticker || quantity === null) {
       skipped += 1;
       continue;
     }
@@ -164,7 +186,7 @@ async function writeHoldings({
     inputs.push({
       accountId,
       securityId,
-      quantity: decimal(quantity)!,
+      quantity,
       averageCostBasis: decimal(position.average_purchase_price),
       marketPrice: decimal(position.price),
       currency: position.currency?.code ?? symbol?.currency?.code ?? null,
