@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   areaChartGeometry,
+  donutGeometry,
   waterfallGeometry,
   type ChartDatum,
   type WaterfallBarInput,
@@ -259,5 +260,60 @@ describe("waterfallGeometry", () => {
     expect(geometry.bars).toEqual([]);
     expect(geometry.connectors).toEqual([]);
     expect(geometry.gridlines).toEqual([]);
+  });
+});
+
+describe("donutGeometry", () => {
+  const ring = { size: 100, thickness: 20 };
+
+  it("gives each slice its share of the whole", () => {
+    const { slices } = donutGeometry({ values: [1, 3], ...ring });
+
+    expect(slices.map((slice) => slice.share)).toEqual([0.25, 0.75]);
+  });
+
+  it("runs the slices end to end around the full circle, in the order given", () => {
+    const { slices } = donutGeometry({ values: [1, 1, 2], ...ring });
+
+    expect(slices.map((slice) => slice.startAngle)).toEqual([0, 0.25, 0.5]);
+    expect(slices.map((slice) => slice.endAngle)).toEqual([0.25, 0.5, 1]);
+  });
+
+  it("keeps the index of the value each slice came from, so a legend can line up with it", () => {
+    // Zero-valued entries are dropped, which would otherwise shift every colour
+    // after them by one.
+    const { slices } = donutGeometry({ values: [3, 0, 1], ...ring });
+
+    expect(slices.map((slice) => slice.index)).toEqual([0, 2]);
+  });
+
+  it("leaves out a slice with nothing in it, rather than drawing a zero-width wedge", () => {
+    const { slices } = donutGeometry({ values: [1, 0, -5], ...ring });
+
+    expect(slices).toHaveLength(1);
+    expect(slices[0].share).toBe(1);
+  });
+
+  it("draws a single holding as a closed ring rather than a wedge that ends where it began", () => {
+    // An arc of exactly 360° has the same start and end point, which every SVG
+    // renderer draws as nothing at all.
+    const [slice] = donutGeometry({ values: [42], ...ring }).slices;
+
+    expect(slice.share).toBe(1);
+    // Two arcs, because one cannot close a full circle.
+    expect(slice.path.match(/A/g)).toHaveLength(4);
+  });
+
+  it("has nothing to draw when every value is empty", () => {
+    expect(donutGeometry({ values: [0, 0], ...ring }).slices).toEqual([]);
+    expect(donutGeometry({ values: [], ...ring }).slices).toEqual([]);
+  });
+
+  it("keeps the ring inside the box it was given", () => {
+    const { radius, innerRadius, center } = donutGeometry({ values: [1, 1], ...ring });
+
+    expect(center).toEqual({ x: 50, y: 50 });
+    expect(radius).toBe(50);
+    expect(innerRadius).toBe(30);
   });
 });

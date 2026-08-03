@@ -79,8 +79,19 @@ A tradable financial instrument (stock, ETF, mutual fund, etc.), identified by t
 _Avoid_: Ticker, symbol, instrument — "Security" is the entity; a ticker/symbol is one of its fields.
 
 **Holding**:
-A snapshot of a Security's position within an Account as of a given sync — quantity, cost basis, market price. A new row is written on every sync (not upserted), so "current holdings" means the latest snapshot per Account/Security pair, not a standing record. Its `as_of` is the _provider's_ reading time, not the moment the job ran — see [ADR 0007](docs/adr/0007-snaptrade-holdings-sync.md).
+A snapshot of how much of a Security an Account holds as of a given sync — quantity, cost basis, market price. A new row is written on every sync (not upserted), so a Holding is a reading rather than a standing record; what counts as the present one is Current holdings, below. Its `as_of` is the _provider's_ reading time, not the moment the job ran — see [ADR 0007](docs/adr/0007-snaptrade-holdings-sync.md).
 _Avoid_: Position — used in the SnapTrade research as an interchangeable term, but "Holding" is this codebase's canonical word.
+
+**Current holdings**:
+The Holdings stamped with an Account's _latest_ `as_of` — the whole reading, taken together. Deliberately not "the newest row per Account/Security pair", which sounds equivalent and is not: a holding sold between two syncs has no later row to supersede it, so that reading would carry it as a holding forever. Resolved per Account, because the two Fidelity accounts sync seconds apart and a single maximum across both would empty whichever finished first. See [ADR 0009](docs/adr/0009-fidelity-holdings-page.md).
+_Avoid_: Portfolio — implies something the app owns and maintains; this is a query over rows the sync appended.
+
+**Allocation**:
+How an Account's value is split across Security types — the composition view above the holdings ledger. Its grouping is `financials_security.security_type`, which is the _wrapper_ a security comes in rather than its asset class, so a bond ETF counts as an ETF and not as fixed income. Stated on the page rather than corrected, because no provider in this stack reports asset class and inferring one would mean guessing at a security's contents from its ticker.
+_Avoid_: Asset allocation — the established term names exactly the stock/bond split this deliberately is not.
+
+**Tax lot**:
+One parcel of a Holding, bought at one price on one day. Stored raw in `financials_holding.tax_lots` and read defensively, because the shape has never been seen: SnapTrade gates lot detail behind its paid plans, so on Personal the column is null on every row this app has written. Null means the provider said nothing, which is not the same as a holding having no lots.
 
 **Account link**:
 The user's assertion that a given provider's account and an Account this app already has are the same real account. Needed because two providers report the same Fidelity accounts under unrelated ids, and only the account holder can say so. Recorded on the SnapTrade Connection's `extra`, and the reason the holdings sync attaches to existing Accounts rather than creating its own — a second row would count the account twice in Net worth.

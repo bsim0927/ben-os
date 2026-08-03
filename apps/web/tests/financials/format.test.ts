@@ -6,6 +6,7 @@ import {
   formatDay,
   formatPercent,
   formatSignedAmount,
+  formatSignedPercent,
   formatTimestamp,
 } from "@/lib/financials/format";
 
@@ -81,6 +82,19 @@ describe("formatPercent", () => {
 
   it("keeps the sign of a fall", () => {
     expect(formatPercent(-0.25)).toBe("-25.0%");
+  });
+});
+
+describe("formatSignedPercent", () => {
+  it("marks a rise, which the plain form leaves unsigned", () => {
+    expect(formatSignedPercent(0.125)).toBe("+12.5%");
+  });
+
+  it("signs a fall with the same minus the amounts use, not Intl's hyphen", () => {
+    // A gain reads as `−$50.00 (−5.3%)`; two different minus signs inside one
+    // figure would show.
+    expect(formatSignedPercent(-0.053)).toBe("−5.3%");
+    expect(formatSignedPercent(-0.053).charAt(0)).toBe("−");
   });
 });
 

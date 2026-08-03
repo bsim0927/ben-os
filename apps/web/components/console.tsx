@@ -48,26 +48,38 @@ export function SegmentedToggle<Option extends string>({
   onChange: (next: Option) => void;
 }) {
   return (
-    <div
-      role="group"
-      aria-label={label}
-      className="border-hairline bg-panel-2 flex overflow-hidden rounded-md border"
-    >
+    <div role="group" aria-label={label} className={segmentedGroupClassName}>
       {options.map((option) => (
         <button
           key={option}
           type="button"
           aria-pressed={option === selected}
           onClick={() => onChange(option)}
-          className={`border-hairline px-3 py-1.5 text-[12px] tracking-[0.04em] not-first:border-l ${
-            option === selected ? "bg-accent/15 text-accent" : "text-muted hover:text-ink"
-          }`}
+          className={segmentedItemClassName(option === selected)}
         >
           {option}
         </button>
       ))}
     </div>
   );
+}
+
+/**
+ * The segmented control's look, apart from the control itself.
+ *
+ * Exported because one of these is a row of `<Link>`s rather than buttons — the
+ * holdings page switches account by navigating, since which account you are
+ * reading is a property of the URL and not of a component's state. Sharing the
+ * classes rather than the component is what keeps the two from drifting apart
+ * visually while staying honestly different elements.
+ */
+export const segmentedGroupClassName =
+  "border-hairline bg-panel-2 flex overflow-hidden rounded-md border";
+
+export function segmentedItemClassName(selected: boolean): string {
+  return `border-hairline px-3 py-1.5 text-[12px] tracking-[0.04em] not-first:border-l ${
+    selected ? "bg-accent/15 text-accent" : "text-muted hover:text-ink"
+  }`;
 }
 
 /**

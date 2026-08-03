@@ -33,12 +33,46 @@ export function formatCompactAmount(value: number, currency?: string): string {
   });
 }
 
+/**
+ * For a change expressed as a share, where the sign is half the meaning.
+ *
+ * Signed by hand rather than by `Intl`, so the minus is the same U+2212
+ * `formatSignedAmount` uses. A gain reads as `−$50.00 (−5.3%)`, and mixing a
+ * typographic minus with an ASCII hyphen inside one figure would show.
+ */
+export function formatSignedPercent(ratio: number): string {
+  return `${ratio < 0 ? "−" : "+"}${formatPercent(Math.abs(ratio))}`;
+}
+
 export function formatPercent(ratio: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "percent",
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(ratio);
+}
+
+/**
+ * The one currency a set of figures can be labelled with, or nothing when they
+ * disagree.
+ *
+ * Summing across currencies is wrong and v1 has one, so the honest response to
+ * more than one is to drop the symbol rather than stamp a total with a currency
+ * that isn't what it means. Note what this does *not* fix: the sum underneath is
+ * still a sum of two currencies, and a caller that can say so should.
+ *
+ * Here rather than beside either caller because both the overview (across
+ * Accounts) and the holdings page (across Holdings) need the same rule, and two
+ * copies would be free to disagree about what an absent currency means.
+ */
+export function sharedCurrency(
+  currencies: readonly (string | null | undefined)[],
+): string | undefined {
+  const named = new Set(
+    currencies.filter((currency) => currency !== null && currency !== undefined),
+  );
+
+  return named.size === 1 ? [...named][0] : undefined;
 }
 
 /**

@@ -19,6 +19,6 @@ Grilling session for the `financials_holding` design ([Wayfinder #16](https://gi
 
 ## Consequences
 
-- Querying "current holdings" means selecting the latest `as_of` per `security_id` per account, not a plain table scan — every read path needs a `DISTINCT ON`/window-function query.
+- Querying "current holdings" means selecting the account's latest `as_of` and taking that whole reading, not a plain table scan — every read path needs the extra step. (This line originally said "the latest `as_of` per `security_id` per account", contradicting decision 1 above; [ADR 0009](./0009-fidelity-holdings-page.md) decision 1 settles it in favour of decision 1, because a per-security maximum keeps a position sold between two syncs in the ledger forever.)
 - `financials_holding` grows unboundedly with every sync — nothing collapses it the way transaction dedup bounds `financials_transaction` growth. Acceptable at this app's single-user daily-sync scale; worth revisiting (e.g. pruning old snapshots) if it ever matters.
 - `financials_account`/`financials_balance_snapshot` need no schema changes for SnapTrade's total account balance — `financials_holding`/`financials_security` are the only genuinely new tables this ticket adds, matching what the research doc (issue #14) anticipated.
