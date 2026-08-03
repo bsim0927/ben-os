@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { AreaChart } from "@/components/area-chart";
 import { MicroLabel } from "@/components/console";
@@ -110,9 +110,20 @@ export function NetWorthHero({ accounts, series, today, currency }: NetWorthHero
         {windowed.length === 0 ? (
           // The balances below are still the latest known ones; it is this
           // window that has nothing in it, and saying so beats an empty box.
-          <p className="text-muted py-8 text-center text-[13px]">
-            No balance snapshots in the last {rangeLabel(range)}.
-          </p>
+          <ChartNotice
+            headline={`No balance readings in the last ${rangeLabel(range)}.`}
+            detail="The figures below are the most recent ones on record."
+          />
+        ) : windowed.length === 1 ? (
+          // One reading is not a trend, and drawing it as a lone dot on an empty
+          // grid reads as a broken chart rather than as a new account. Balance
+          // history cannot be backfilled — SimpleFIN serves the current balance
+          // only — so this state is every account's first day, and it should say
+          // what happens next rather than look like a failure.
+          <ChartNotice
+            headline={`One balance reading so far, from ${formatDay(windowed[0].date)}.`}
+            detail="Net worth history builds up one point per sync — the trend line appears after the next daily poll."
+          />
         ) : (
           <AreaChart
             data={windowed.map((point) => ({ x: dayToTimestamp(point.date), y: point.total }))}
@@ -127,6 +138,16 @@ export function NetWorthHero({ accounts, series, today, currency }: NetWorthHero
 
       <EquationStrip equation={equation} asOf={latest?.date} currency={currency} />
     </section>
+  );
+}
+
+/** Stands in for the chart when there is nothing worth drawing, at the chart's height. */
+function ChartNotice({ headline, detail }: { headline: string; detail: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 px-6 py-14 text-center">
+      <p className="text-ink text-[13px]">{headline}</p>
+      <p className="text-muted max-w-[46ch] text-[12px] leading-relaxed">{detail}</p>
+    </div>
   );
 }
 
@@ -180,15 +201,23 @@ function EquationStrip({
 
   return (
     <section aria-label="Net worth equation" className="border-hairline border-t pt-4">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-3">
+      {/*
+       * Each operator is bound to the term it introduces, so a wrap can only
+       * ever fall *between* `+ Account` units — never leaving a `+` or an `=`
+       * stranded at the end of a line, which is what made four accounts read as
+       * a broken list rather than a sum.
+       */}
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
         {equation.terms.map((term, index) => (
-          <Fragment key={term.accountId}>
+          <div key={term.accountId} className="flex shrink-0 items-start gap-x-3">
             {index > 0 ? <Operator>+</Operator> : null}
             <Term label={term.label} value={formatAmount(term.value, currency)} />
-          </Fragment>
+          </div>
         ))}
-        <Operator>=</Operator>
-        <Term label="Net worth" value={formatAmount(equation.total, currency)} emphasised />
+        <div className="flex shrink-0 items-start gap-x-3">
+          <Operator>=</Operator>
+          <Term label="Net worth" value={formatAmount(equation.total, currency)} emphasised />
+        </div>
       </div>
       {asOf ? <p className="text-muted mt-3 text-[12px]">As of {formatDay(asOf)}</p> : null}
     </section>

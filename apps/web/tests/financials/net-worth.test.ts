@@ -209,6 +209,36 @@ describe("equationFor", () => {
     });
   });
 
+  it("gives every account its own term, including two behind the same login", () => {
+    // The real subscription: a card and a checking account behind the Chase
+    // login, two funds behind Fidelity's. Four accounts, four terms — the card
+    // sitting negative next to the checking account is exactly what would be
+    // lost by folding them into one institution.
+    const card: AccountRef = { id: "card", name: "United Explorer", status: "active" };
+    const roth: AccountRef = { id: "roth", name: "ROTH IRA", status: "active" };
+
+    const equation = equationFor(
+      {
+        date: "2026-08-01",
+        total: 5_652.46,
+        byAccount: { chase: 2_018.85, card: -2_309.28, fidelity: 5_334.03, roth: 608.86 },
+      },
+      [chase, card, fidelity, roth],
+    );
+
+    expect(equation.terms).toEqual([
+      { accountId: "chase", label: "Chase", value: 2_018.85 },
+      { accountId: "card", label: "United Explorer", value: -2_309.28 },
+      { accountId: "fidelity", label: "Fidelity", value: 5_334.03 },
+      { accountId: "roth", label: "ROTH IRA", value: 608.86 },
+    ]);
+    // To the cent, which is the precision the strip prints them at. Four exact
+    // cent values still sum to 5652.459999999999 in binary floating point.
+    const summed = equation.terms.reduce((sum, term) => sum + term.value, 0);
+
+    expect(Math.round(summed * 100) / 100).toBe(equation.total);
+  });
+
   it("sums its terms to the total it reports — the strip's whole claim", () => {
     const equation = equationFor(point, [chase, fidelity]);
 

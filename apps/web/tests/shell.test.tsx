@@ -25,6 +25,19 @@ function signedInAs(email: string | null, metadata: Record<string, unknown> = {}
 
   createClient.mockResolvedValue({
     auth: { getUser: async () => ({ data: { user }, error: null }) },
+    // The layout reads sync state for the freshness chip. Nothing connected is
+    // the right default here — what the chip says is `sync-status.test.ts`'s
+    // subject, not the shell's.
+    from() {
+      const builder = {
+        select: () => builder,
+        order: () => builder,
+        limit: () => builder,
+        returns: () => Promise.resolve({ data: [], error: null }),
+      };
+
+      return builder;
+    },
   });
 }
 

@@ -150,8 +150,15 @@ export function windowSeries(
 }
 
 /**
- * The equation strip's terms: every account contributing at `point`, in the
+ * The equation strip's terms: one per account contributing at `point`, in the
  * order the accounts were given, plus the total they sum to.
+ *
+ * One term per *account*, not per institution. Grouping by connection would read
+ * closer to the `Chase + Fidelity` of the original sketch, but it hides which
+ * account holds what — and the balances that matter most here are the ones that
+ * disagree with their neighbours, like a card sitting negative behind the same
+ * login as a checking account. The strip is the place that detail is visible
+ * without leaving the page; wrapping is the layout's problem to solve.
  *
  * An account with no balance at this point is left out rather than shown as
  * zero — `Chase + Old Savings + Fidelity` with a zero in the middle claims a
