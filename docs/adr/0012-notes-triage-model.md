@@ -6,7 +6,7 @@ The Notes module (map [#55](https://github.com/bsim0927/ben-os/issues/55)) captu
 into Supabase, then an agent **triages** it: picks the notepad it belongs in (creating one if none
 fits) and infers its structure. ADR 0010 fixed the *storage* those reads and writes touch and
 deliberately left the triage *behaviour* — timing, failure handling, override reconciliation, the
-tool contract — to this ADR (0011), resolving ticket
+tool contract — to this ADR (0012), resolving ticket
 [#60](https://github.com/bsim0927/ben-os/issues/60). The cost/infra ground was surveyed in research
 [#57](https://github.com/bsim0927/ben-os/issues/57): triage is the project's **first** LLM
 integration; the only runtime is Vercel Cron → Next.js Node route handler (no Supabase edge
@@ -31,10 +31,12 @@ rounding error — so every choice below is a **freshness + infra-fit** call, no
    row. Capture is therefore never blocked or lost by a slow or failing LLM call — matching ADR 0010's
    "the row lands first, an agent files it after." A consequence worth naming: the on-arrival trigger
    and the cron sweep become the **same** operation — *triage an already-landed untriaged note* —
-   differing only in what fires them. The exact async-invocation plumbing (post-response continuation
-   vs. an internal trigger) is the ingest-boundary ticket's
-   ([#59](https://github.com/bsim0927/ben-os/issues/59)) to specify; this ADR only fixes that triage
-   reads a *persisted* note, never an in-flight request.
+   differing only in what fires them. The ingest boundary itself is fixed by
+   [ADR 0011](0011-notes-ingest-boundary.md) (ticket #59): its Ingest core lands a durable
+   `triaged_at IS NULL` row and hands off *there*, deliberately not running triage inline — so this ADR
+   builds directly on that seam. The exact async-invocation plumbing (post-response continuation vs. an
+   internal trigger) that turns "row landed" into "on-arrival triage fired" is the one detail left to
+   the build phase; this ADR only fixes that triage reads a *persisted* note, never an in-flight request.
 
 3. **Triage runs once per note, then the note is frozen against automatic re-triage.** A note is
    auto-triaged only while `triaged_at IS NULL`; a successful run sets `triaged_at` and the note is
@@ -131,10 +133,11 @@ triggers mean it is applied out-of-band at build time rather than through the Su
 
 ## Consequences
 
-- The **ingest boundary** ([#59](https://github.com/bsim0927/ben-os/issues/59)) now has triage's shape
-  to design against: a note lands raw and is triaged *after* acknowledgement (decision 2). #59 owns the
-  exact async trigger; it can assume triage is an idempotent operation over a persisted, untriaged note.
-- The **capture feedback loop** (map fog) is unblocked: because triage runs seconds after capture, a
+- The **ingest boundary** ([ADR 0011](0011-notes-ingest-boundary.md), ticket #59) already lands a
+  durable untriaged row and stops; this ADR is the downstream half — triage is an idempotent operation
+  over that persisted, untriaged note. The build phase owns the exact async trigger that fires it.
+- The **capture feedback loop** ([#69](https://github.com/bsim0927/ben-os/issues/69)) is unblocked:
+  because triage runs seconds after capture, a
   bot reply like "Added to Shopping list ✓" is feasible on the on-arrival path, and a reply that
   corrects placement maps onto the explicit re-triage action (decision 3).
 - The **web manager** ([#62](https://github.com/bsim0927/ben-os/issues/62)) surfaces the inbox
