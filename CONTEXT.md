@@ -119,5 +119,13 @@ _Avoid_: Inbox (as an entity) — there is no Inbox notepad, only the unfiled qu
 Where a Note was captured from — `notes_note.channel` (`'telegram'` for v1, an iOS widget later), paired with a `source` jsonb holding that channel's own identifiers (including a stable `source.external_id` for capture idempotency). Channel-agnostic by construction: the note table hardcodes no per-channel columns, mirroring the Financials `provider` + `extra` multi-provider pattern. `captured_at` is the sender's timestamp, kept distinct from `created_at`.
 _Avoid_: Source (for the channel itself) — `source` is the jsonb of channel-specific ids; the channel is the named transport; Provider — that word belongs to Financials' external data sources.
 
+**Adapter**:
+The per-channel entry point that receives a channel's native payload (a Telegram webhook update for v1) at its own route, authenticates it in that channel's own way, and translates it into the normalized inbound shape — `raw_text` + `channel` + `source` (with a stable `source.external_id`) + `captured_at`. Telegram is adapter #1; a future iOS widget is another adapter. Each adapter owns its channel's auth and payload mapping and nothing else; it then hands off to the Ingest core. See [ADR 0011](docs/adr/0011-notes-ingest-boundary.md).
+_Avoid_: Webhook (as the boundary) — a webhook is one channel's transport; the adapter is the role that translates it.
+
+**Ingest core**:
+The single in-process function every Adapter calls to land a captured note — it validates the normalized shape, enforces capture idempotency (`insert … on conflict do nothing` on the `(channel, source->>'external_id')` index), sets `body := raw_text`, `notepad_id := null`, `triaged_at := null`, and inserts via the service role. It trusts its in-process callers (auth already happened in the Adapter) and never runs triage — an untriaged note (`triaged_at IS NULL`) is the entire hand-off to triage. Because it bypasses RLS, `is_authorized()` is _not_ the ingest gate; that policy remains the gate for the web manager. See [ADR 0011](docs/adr/0011-notes-ingest-boundary.md).
+_Avoid_: Ingest endpoint — there is no public generic ingest URL; the core is internal and reached only through an Adapter.
+
 **Connection Portal**:
 SnapTrade's hosted page where the user completes the brokerage OAuth — for Fidelity, its own login plus the Fidelity Access consent screen. The app can request a portal URL but cannot complete the flow; what comes out the far side is the `authorizationId` that identifies the Connection from then on.
