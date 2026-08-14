@@ -119,5 +119,13 @@ _Avoid_: Inbox (as an entity) — there is no Inbox notepad, only the unfiled qu
 Where a Note was captured from — `notes_note.channel` (`'telegram'` for v1, an iOS widget later), paired with a `source` jsonb holding that channel's own identifiers (including a stable `source.external_id` for capture idempotency). Channel-agnostic by construction: the note table hardcodes no per-channel columns, mirroring the Financials `provider` + `extra` multi-provider pattern. `captured_at` is the sender's timestamp, kept distinct from `created_at`.
 _Avoid_: Source (for the channel itself) — `source` is the jsonb of channel-specific ids; the channel is the named transport; Provider — that word belongs to Financials' external data sources.
 
+**Channel adapter**:
+The thin, channel-specific translator that receives a Channel's native inbound format, authenticates it, normalizes it to a `RawNote`, and calls `ingestNote`. Telegram's adapter is a webhook route handler (`app/api/notes/telegram/route.ts`) that verifies the secret-token header and chat-id allowlist; a future iOS-widget adapter authenticates its own way. Channel-agnosticism is honored at the `ingestNote` seam, not by forcing every channel onto one HTTP shape. See [ADR 0011](docs/adr/0011-notes-ingest-boundary.md).
+_Avoid_: Handler, endpoint — the adapter is the whole translate-authenticate-normalize step, not just its HTTP entry; Ingest — that is the shared function the adapter calls, not the per-channel adapter itself.
+
+**Ingest**:
+The channel-agnostic boundary a raw note crosses to land in the DB — the function `ingestNote(RawNote)`, which writes an unfiled, untriaged `notes_note` (copying `raw_text` into `body`, deduping on `(channel, source.external_id)`) and finishes. Ingest deliberately stops before triage: a redelivered note is a no-op that still returns success, and triage runs downstream ([#60](https://github.com/bsim0927/ben-os/issues/60)). The write is RLS-enforced, never a service-role bypass. See [ADR 0011](docs/adr/0011-notes-ingest-boundary.md).
+_Avoid_: Capture (as a synonym) — capture is the user firing off a message from a Channel; ingest is the boundary it crosses to persist; Triage — a separate, downstream step ingest does not perform.
+
 **Connection Portal**:
 SnapTrade's hosted page where the user completes the brokerage OAuth — for Fidelity, its own login plus the Fidelity Access consent screen. The app can request a portal URL but cannot complete the flow; what comes out the far side is the `authorizationId` that identifies the Connection from then on.
