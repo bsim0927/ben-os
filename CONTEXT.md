@@ -97,5 +97,27 @@ One parcel of a Holding, bought at one price on one day. Stored raw in `financia
 The user's assertion that a given provider's account and an Account this app already has are the same real account. Needed because two providers report the same Fidelity accounts under unrelated ids, and only the account holder can say so. Recorded on the SnapTrade Connection's `extra`, and the reason the holdings sync attaches to existing Accounts rather than creating its own — a second row would count the account twice in Net worth.
 _Avoid_: Mapping, match — "match" suggests something derived from the data, and this is deliberately asserted rather than inferred.
 
+### Notes module
+
+**Notepad**:
+A managed, named container that notes are filed into (`notes_notepad`). Carries a `kind` (`freeform` / `checklist` / `list` / …) that sets its default rendering and steers triage, and a `description` — a short purpose line triage both writes on creation and reads to decide where a new note belongs. Identity is its normalized name: a `unique` index on `lower(trim(name))` blocks literal duplicates, and the web manager's Merge reconciles same-thing-different-name cases. See [ADR 0010](docs/adr/0010-notes-data-model.md).
+_Avoid_: List, folder, category — a notepad may be a checklist but is not only one, and "category" already belongs to Financials for a single-valued transaction label.
+
+**Note**:
+A single captured message filed into a Notepad (`notes_note`). Holds `raw_text` (the immutable original capture) and `body` (the editable working content that starts equal to it), a `structure` payload, its channel provenance, and `captured_at`. Its `notepad_id` is nullable — a note with no notepad is **unfiled**.
+_Avoid_: Message, item — "message" is the transport, a note is what we keep; "item" is one rendering (a checklist entry), not the entity.
+
+**Note structure**:
+The per-note derived shape, held as a `jsonb` payload on `notes_note.structure` rather than typed columns — e.g. `{"done": false, "due_at": "…"}`, where an absent key means "not that kind of structure" (no `done` ⇒ not a checklist item). Modeled as jsonb deliberately, to design for expansion as new structure kinds arrive. "Checklist-ness" is a hybrid: primarily the notepad's `kind`, with the note's structure carrying exceptions.
+_Avoid_: Metadata — structure is the note's inferred content shape, not incidental bookkeeping.
+
+**Unfiled**:
+A Note with `notepad_id IS NULL` — captured but not yet placed in a notepad, whether triage hasn't run, deferred, or failed. The inbox is this query, not a reserved "Inbox" notepad. Distinct from `triaged_at IS NULL`, which records whether triage has _run_; re-triage picks up notes that are still untriaged.
+_Avoid_: Inbox (as an entity) — there is no Inbox notepad, only the unfiled query; Pending — conflates "not filed" with "triage not yet attempted".
+
+**Channel**:
+Where a Note was captured from — `notes_note.channel` (`'telegram'` for v1, an iOS widget later), paired with a `source` jsonb holding that channel's own identifiers (including a stable `source.external_id` for capture idempotency). Channel-agnostic by construction: the note table hardcodes no per-channel columns, mirroring the Financials `provider` + `extra` multi-provider pattern. `captured_at` is the sender's timestamp, kept distinct from `created_at`.
+_Avoid_: Source (for the channel itself) — `source` is the jsonb of channel-specific ids; the channel is the named transport; Provider — that word belongs to Financials' external data sources.
+
 **Connection Portal**:
 SnapTrade's hosted page where the user completes the brokerage OAuth — for Fidelity, its own login plus the Fidelity Access consent screen. The app can request a portal URL but cannot complete the flow; what comes out the far side is the `authorizationId` that identifies the Connection from then on.
