@@ -12,8 +12,13 @@ import { supabaseEnv } from "./env";
  * the inside. `/api/cron` is reached by a scheduler that has no Google session
  * and never can; those routes carry their own bearer-secret check instead
  * (`lib/cron.ts`), so skipping the session gate here does not leave them open.
+ * `/api/notes/telegram/webhook` is the same story for the other kind of
+ * sessionless caller: Telegram POSTs it server-to-server, and it authenticates
+ * itself with the secret-token header plus the chat allowlist (`lib/notes/
+ * telegram.ts`, ADR 0011 dec. 4) — so, like cron, letting it past the session
+ * gate does not leave it open.
  */
-const PUBLIC_PREFIXES = ["/auth", "/api/cron"];
+const PUBLIC_PREFIXES = ["/auth", "/api/cron", "/api/notes/telegram/webhook"];
 
 /**
  * The app-layer gate, run ahead of every render.
