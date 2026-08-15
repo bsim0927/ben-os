@@ -112,8 +112,8 @@ The per-note derived shape, held as a `jsonb` payload on `notes_note.structure` 
 _Avoid_: Metadata — structure is the note's inferred content shape, not incidental bookkeeping.
 
 **Unfiled**:
-A Note with `notepad_id IS NULL` — captured but not yet placed in a notepad, whether triage hasn't run, deferred, or failed. The inbox is this query, not a reserved "Inbox" notepad. Distinct from `triaged_at IS NULL`, which records whether triage has _run_; re-triage picks up notes that are still untriaged.
-_Avoid_: Inbox (as an entity) — there is no Inbox notepad, only the unfiled query; Pending — conflates "not filed" with "triage not yet attempted".
+A Note with `notepad_id IS NULL` — the inbox is this query, not a reserved "Inbox" notepad. Filing (`notepad_id`) and triage-having-run (`triaged_at`) are **orthogonal axes**: an unfiled note may be _deliberately unfiled_ (triage ran and judged it belongs nowhere — `triaged_at` set), _pending_ (triage hasn't succeeded yet — `triaged_at IS NULL`), or _permanently failed_ (`triaged_at IS NULL` with the retry ceiling reached). See [ADR 0012](docs/adr/0012-notes-triage-model.md).
+_Avoid_: Inbox (as an entity) — there is no Inbox notepad, only the unfiled query; Pending (as a synonym for unfiled) — pending is one _reason_ a note is unfiled, not the whole set.
 
 **Channel**:
 Where a Note was captured from — `notes_note.channel` (`'telegram'` for v1, an iOS widget later), paired with a `source` jsonb holding that channel's own identifiers (including a stable `source.external_id` for capture idempotency). Channel-agnostic by construction: the note table hardcodes no per-channel columns, mirroring the Financials `provider` + `extra` multi-provider pattern. `captured_at` is the sender's timestamp, kept distinct from `created_at`.
@@ -126,6 +126,14 @@ _Avoid_: Webhook (as the boundary) — a webhook is one channel's transport; the
 **Ingest core**:
 The single in-process function every Adapter calls to land a captured note — it validates the normalized shape, enforces capture idempotency (`insert … on conflict do nothing` on the `(channel, source->>'external_id')` index), sets `body := raw_text`, `notepad_id := null`, `triaged_at := null`, and inserts through an RLS-enforced `withAuthorizedSession` writer (the Financials pattern — `authenticated` role + JWT claims — never a service role, of which ben-os has none). It trusts its in-process callers for channel auth (that already happened in the Adapter), but the DB write still passes `is_authorized()`, so that policy is the ingest gate exactly as it is the web-manager gate. It never runs triage — an untriaged note (`triaged_at IS NULL`) is the entire hand-off to triage. See [ADR 0011](docs/adr/0011-notes-ingest-boundary.md).
 _Avoid_: Ingest endpoint — there is no public generic ingest URL; the core is internal and reached only through an Adapter.
+
+**Triage**:
+The agentic step that reads a captured Note (landed unfiled by the Ingest core) and decides where it belongs — an existing Notepad, a new one, or deliberately nowhere — and its structure, in one strict `file_note` LLM tool call. It runs **on-arrival** — decoupled from and _after_ the raw note is acknowledged, never inline in capture — and **once** per note: success sets `triaged_at`, freezing the note against automatic re-triage so a manual move is permanent. Re-triage is only ever an explicit, user-initiated action. See [ADR 0012](docs/adr/0012-notes-triage-model.md).
+_Avoid_: Classify, sort — triage may _create_ its target notepad and rewrite the note's body, not merely bucket it; Routing — the note is not forwarded, it is filed in place.
+
+**Triage sweep**:
+The once-daily cron pass that re-triages Notes still stuck untriaged — an on-arrival failure, or a note captured while triage was down — up to a bounded retry ceiling. It is a **backstop**, not the workhorse (on-arrival is); framing it as a sweep is what lets it live inside Vercel Hobby's one-cron-run-per-day cap. See [ADR 0012](docs/adr/0012-notes-triage-model.md).
+_Avoid_: Batch (triage) — the sweep is a retry backstop over the _failed_ tail, not the primary path; the rejected "scheduled batch triages everything" model is a different thing.
 
 **Capture confirmation**:
 The single Telegram reply the bot sends back **after triage runs**, naming the notepad a note landed in and whether triage **reused or newly started** it (`📓 Filed in *Shopping list*` vs `🆕 Started *Shopping list*`), or that the note was kept unfiled or couldn't be filed. It is sent by the triage step — not the Ingest core, which stops at the landed row — and carries the `✏️ Move` button that opens a Correction. There is no separate pre-triage acknowledgement: on the happy path triage is seconds away, so capture `200`s silently and the confirmation is the only human-facing reply. See [ADR 0013](docs/adr/0013-notes-capture-feedback-loop.md).
