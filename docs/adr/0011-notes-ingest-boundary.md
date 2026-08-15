@@ -50,13 +50,22 @@ widget slots in without a rewrite. This ADR is plan-only, like 0010 — no code 
    pre-empt #60, and running an LLM inside the webhook would blow the fast-`200` budget below and
    trigger Telegram redelivery storms.
 
-4. **Auth is per-channel, enforced in the Adapter; the core inserts via the service role.** A webhook
-   has **no Supabase user session** — Telegram posts server-to-server — so `is_authorized()` (the RLS
-   gate for _Ben's web session_) cannot be the ingest mechanism. Each adapter authenticates its own
-   channel and then calls the trusted in-process core, which inserts with the **service role**,
-   bypassing RLS. `is_authorized()` stays the gate for the **web manager** reading and editing notes,
-   never for ingest. A future iOS widget brings its own adapter-level auth (a shared secret / signed
-   token) — same pattern, different check. For Telegram specifically (per
+4. **Auth is per-channel, enforced in the Adapter; the core's write is RLS-enforced, never a
+   service-role bypass.** A webhook has **no Supabase user session** — Telegram posts server-to-server
+   — so an ingest write cannot be driven by a logged-in session. Each adapter authenticates its own
+   channel and then calls the trusted in-process core. But the core does **not** reach for a service
+   role: ben-os has **no service-role client by design** (`apps/web/.env.example` warns _"Do not
+   substitute a service-role connection"_), and the Financials cron writer already solves this exact
+   "privileged server writer, no session" problem — it connects via `DATABASE_URL` and, inside each
+   transaction, assumes the `authenticated` role with the authorized user's JWT claims
+   (`set_config('request.jwt.claims', …)` + `set local role authenticated`), so `is_authorized()` RLS
+   is evaluated even for a server-originated write (`apps/web/lib/financials/db.ts`,
+   `withAuthorizedSession`). The Notes ingest core reuses that pattern (a `lib/notes/db.ts` analogue),
+   so a Telegram-originated insert passes the **same** RLS as a web write. Two independent checks — the
+   adapter's channel auth and the DB's RLS — and RLS is never bypassed, so `is_authorized()` remains
+   the gate on **every** write path, ingest included. A future iOS widget brings its own adapter-level
+   auth (a shared secret / signed token) — same pattern, different channel check. For Telegram
+   specifically (per
    [#56](https://github.com/bsim0927/ben-os/issues/56)): the `X-Telegram-Bot-Api-Secret-Token` header
    proves the caller is Telegram, and the hard-coded `TELEGRAM_ALLOWED_CHAT_ID` allowlist
    (chat `5694272797`) proves the sender is Ben.
@@ -79,8 +88,10 @@ widget slots in without a rewrite. This ADR is plan-only, like 0010 — no code 
 ## Consequences
 
 - The build spec ([#63](https://github.com/bsim0927/ben-os/issues/63)) implements one
-  `ingestNote(normalized)` core plus a Telegram adapter route; a service-role Supabase client is
-  needed server-side for the core's insert (distinct from the RLS-scoped client the web manager uses).
+  `ingestNote(normalized)` core plus a Telegram adapter route; the core's insert goes through a
+  `lib/notes/db.ts` `withAuthorizedSession` writer (the Financials pattern — `DATABASE_URL` +
+  `authenticated` role + JWT claims, RLS enforced), **not** a service-role client, of which ben-os has
+  none by design.
 - Triage ([#60](https://github.com/bsim0927/ben-os/issues/60)) is free to choose its trigger: it reads
   `triaged_at IS NULL` notes and writes `notepad_id` / `body` / `structure` / `triaged_at`. Nothing in
   ingest constrains that choice.
