@@ -97,6 +97,36 @@ export async function resetFinancials(): Promise<void> {
   });
 }
 
+const NOTES_TABLES = ["public.notes_note", "public.notes_notepad"];
+
+/**
+ * The Notes analogue of `resetFinancials`: truncate the notes tables between
+ * cases rather than wrapping each in a transaction, so the writer's own
+ * `withAuthorizedSession` transactions stay real commit boundaries instead of
+ * quiet no-ops nested inside a test-owned one.
+ *
+ * `notes_note` before `notes_notepad` for the FK; `cascade` covers it either
+ * way, but naming the order keeps it obvious. The `allow_bulk_delete` opt-in is
+ * the same deliberate second step the guard exists to require — this suite is
+ * exactly the "test pointed at the wrong database" case the guard refuses by
+ * default, and asking per transaction is what distinguishes it.
+ */
+export async function resetNotes(): Promise<void> {
+  await asSuperuser(async (query) => {
+    await query("begin");
+
+    try {
+      await query("set local ben_os.allow_bulk_delete = 'on'");
+      await query(`truncate ${NOTES_TABLES.join(", ")} restart identity cascade`);
+      await query("commit");
+    } catch (cause) {
+      await query("rollback").catch(() => {});
+
+      throw cause;
+    }
+  });
+}
+
 export async function countRows(table: string): Promise<number> {
   const { rows } = await asSuperuser((query) => query(`select count(*)::int as n from ${table}`));
 
