@@ -4,8 +4,8 @@
 
 The Notes module (map [#55](https://github.com/bsim0927/ben-os/issues/55)) captures a phone message
 into Supabase, then an agent **triages** it: picks the notepad it belongs in (creating one if none
-fits) and infers its structure. ADR 0010 fixed the *storage* those reads and writes touch and
-deliberately left the triage *behaviour* — timing, failure handling, override reconciliation, the
+fits) and infers its structure. ADR 0010 fixed the _storage_ those reads and writes touch and
+deliberately left the triage _behaviour_ — timing, failure handling, override reconciliation, the
 tool contract — to this ADR (0012), resolving ticket
 [#60](https://github.com/bsim0927/ben-os/issues/60). The cost/infra ground was surveyed in research
 [#57](https://github.com/bsim0927/ben-os/issues/57): triage is the project's **first** LLM
@@ -15,11 +15,11 @@ rounding error — so every choice below is a **freshness + infra-fit** call, no
 
 ## Decisions
 
-1. **Triage runs on-arrival, with a once-daily cron *sweep* as a backstop — not a scheduled batch.**
-   A pure batched pass is dominated: the Hobby one-run/day cap makes it both up-to-24h stale *and*
+1. **Triage runs on-arrival, with a once-daily cron _sweep_ as a backstop — not a scheduled batch.**
+   A pure batched pass is dominated: the Hobby one-run/day cap makes it both up-to-24h stale _and_
    un-speed-uppable. So the primary path is **on-arrival** — a captured note triggers its own triage,
    giving the "fire from my phone → it's filed seconds later" feel and sidestepping the cron cap
-   entirely (the trigger is a note write, not a cron). The daily cron is *not* the workhorse: it is a
+   entirely (the trigger is a note write, not a cron). The daily cron is _not_ the workhorse: it is a
    **sweep** that re-picks any note still stuck untriaged (a failed on-arrival call, or a note captured
    while triage was down). One run/day is plenty for a backstop, so it fits inside the Hobby cap.
    Rejected: pure on-arrival (a stranded note has nothing to retry it); pure batched (stale + capped).
@@ -30,13 +30,13 @@ rounding error — so every choice below is a **freshness + infra-fit** call, no
    ingest path **writes the raw note, responds `200` immediately, then runs triage** over the persisted
    row. Capture is therefore never blocked or lost by a slow or failing LLM call — matching ADR 0010's
    "the row lands first, an agent files it after." A consequence worth naming: the on-arrival trigger
-   and the cron sweep become the **same** operation — *triage an already-landed untriaged note* —
+   and the cron sweep become the **same** operation — _triage an already-landed untriaged note_ —
    differing only in what fires them. The ingest boundary itself is fixed by
    [ADR 0011](0011-notes-ingest-boundary.md) (ticket #59): its Ingest core lands a durable
-   `triaged_at IS NULL` row and hands off *there*, deliberately not running triage inline — so this ADR
+   `triaged_at IS NULL` row and hands off _there_, deliberately not running triage inline — so this ADR
    builds directly on that seam. The exact async-invocation plumbing (post-response continuation vs. an
    internal trigger) that turns "row landed" into "on-arrival triage fired" is the one detail left to
-   the build phase; this ADR only fixes that triage reads a *persisted* note, never an in-flight request.
+   the build phase; this ADR only fixes that triage reads a _persisted_ note, never an in-flight request.
 
 3. **Triage runs once per note, then the note is frozen against automatic re-triage.** A note is
    auto-triaged only while `triaged_at IS NULL`; a successful run sets `triaged_at` and the note is
@@ -47,12 +47,12 @@ rounding error — so every choice below is a **freshness + infra-fit** call, no
    note"), which deliberately re-arms the note (see decision 5). Rejected: routinely re-triageable
    notes, which would need rules to detect and respect manual moves.
 
-4. **`triaged_at` means triage *ran*; `notepad_id` means it got *filed*. They are orthogonal, and
+4. **`triaged_at` means triage _ran_; `notepad_id` means it got _filed_. They are orthogonal, and
    "leave unfiled" is a legitimate triage outcome.** Because triage may create a notepad when none
-   fits (decision 6), it never *has* to abstain on placement — but forcing a home for every vague
+   fits (decision 6), it never _has_ to abstain on placement — but forcing a home for every vague
    one-off note ("remember to think about this") would breed notepad sprawl. So triage may
-   **deliberately leave a note unfiled**: file nowhere, yet still set `triaged_at` because it *ran and
-   decided*. This keeps the two axes clean and matches ADR 0010's exact wording ("`triaged_at`
+   **deliberately leave a note unfiled**: file nowhere, yet still set `triaged_at` because it _ran and
+   decided_. This keeps the two axes clean and matches ADR 0010's exact wording ("`triaged_at`
    disambiguates never-triaged/failed from triage-has-run"):
    - **Filed**: `notepad_id` set, `triaged_at` set.
    - **Deliberately unfiled**: `notepad_id` NULL, `triaged_at` set — sits in the inbox, but triage
@@ -71,7 +71,7 @@ rounding error — so every choice below is a **freshness + infra-fit** call, no
    (design-for-expansion; ADR 0010 decision 2). The sweep's takeable set is
    `triaged_at IS NULL AND coalesce((triage->>'attempts')::int, 0) < 3`: each attempt increments
    `triage.attempts` and, on error, records `triage.last_error`. At **3** failed attempts the note is
-   *permanently failed* — still `triaged_at IS NULL` and `notepad_id NULL` so it sits **visibly** in
+   _permanently failed_ — still `triaged_at IS NULL` and `notepad_id NULL` so it sits **visibly** in
    the inbox for manual attention, but the sweep no longer re-picks it. This keeps `triaged_at`
    semantics pure ("NULL always means not-yet-successfully-run") without an endless retry churn. A
    manual **re-triage** (decision 3) resets `triage.attempts` to 0, re-arming the note for one more
@@ -84,19 +84,19 @@ rounding error — so every choice below is a **freshness + infra-fit** call, no
    the note's `raw_text` plus the current notepad set (`id` + `name` + `kind` + `description`) as its
    choose-from list. The tool's parameters the model returns:
 
-   | field | type | meaning |
-   | --- | --- | --- |
-   | `notepad_id` | `string \| null` | an **existing** notepad's id to file into, else null |
-   | `new_notepad` | `{ name, kind, description } \| null` | a notepad to create and file into |
-   | `structure` | `object` | the per-note `structure` jsonb (`done`, `due_at`, …) |
-   | `body` | `string` | conservatively cleaned working text |
+   | field         | type                                  | meaning                                              |
+   | ------------- | ------------------------------------- | ---------------------------------------------------- |
+   | `notepad_id`  | `string \| null`                      | an **existing** notepad's id to file into, else null |
+   | `new_notepad` | `{ name, kind, description } \| null` | a notepad to create and file into                    |
+   | `structure`   | `object`                              | the per-note `structure` jsonb (`done`, `due_at`, …) |
+   | `body`        | `string`                              | conservatively cleaned working text                  |
 
    Rules enforced **server-side**, not trusted to the model:
    - **At most one** of `notepad_id` / `new_notepad` is non-null. Both null = deliberately unfiled
      (decision 4).
    - On `new_notepad`, the server **upserts by normalized name** (`lower(trim(name))`) so a create
      races safely against ADR 0010's unique index — if the notepad already exists, it is reused rather
-     than erroring. The LLM is *prompted* to prefer reuse, but the DB is the backstop.
+     than erroring. The LLM is _prompted_ to prefer reuse, but the DB is the backstop.
    - `body` cleanup is **conservative**: strip routing preamble only (e.g. "add to groceries: mangoes"
      → "mangoes"), never reword the user's content. `raw_text` is untouched (ADR 0010 decision 6), so
      an over-eager clean is always recoverable.

@@ -124,7 +124,7 @@ The per-channel entry point that receives a channel's native payload (a Telegram
 _Avoid_: Webhook (as the boundary) — a webhook is one channel's transport; the adapter is the role that translates it.
 
 **Ingest core**:
-The single in-process function every Adapter calls to land a captured note — it validates the normalized shape, enforces capture idempotency (`insert … on conflict do nothing` on the `(channel, source->>'external_id')` index), sets `body := raw_text`, `notepad_id := null`, `triaged_at := null`, and inserts via the service role. It trusts its in-process callers (auth already happened in the Adapter) and never runs triage — an untriaged note (`triaged_at IS NULL`) is the entire hand-off to triage. Because it bypasses RLS, `is_authorized()` is _not_ the ingest gate; that policy remains the gate for the web manager. See [ADR 0011](docs/adr/0011-notes-ingest-boundary.md).
+The single in-process function every Adapter calls to land a captured note — it validates the normalized shape, enforces capture idempotency (`insert … on conflict do nothing` on the `(channel, source->>'external_id')` index), sets `body := raw_text`, `notepad_id := null`, `triaged_at := null`, and inserts through an RLS-enforced `withAuthorizedSession` writer (the Financials pattern — `authenticated` role + JWT claims — never a service role, of which ben-os has none). It trusts its in-process callers for channel auth (that already happened in the Adapter), but the DB write still passes `is_authorized()`, so that policy is the ingest gate exactly as it is the web-manager gate. It never runs triage — an untriaged note (`triaged_at IS NULL`) is the entire hand-off to triage. See [ADR 0011](docs/adr/0011-notes-ingest-boundary.md).
 _Avoid_: Ingest endpoint — there is no public generic ingest URL; the core is internal and reached only through an Adapter.
 
 **Triage**:
@@ -134,6 +134,18 @@ _Avoid_: Classify, sort — triage may _create_ its target notepad and rewrite t
 **Triage sweep**:
 The once-daily cron pass that re-triages Notes still stuck untriaged — an on-arrival failure, or a note captured while triage was down — up to a bounded retry ceiling. It is a **backstop**, not the workhorse (on-arrival is); framing it as a sweep is what lets it live inside Vercel Hobby's one-cron-run-per-day cap. See [ADR 0012](docs/adr/0012-notes-triage-model.md).
 _Avoid_: Batch (triage) — the sweep is a retry backstop over the _failed_ tail, not the primary path; the rejected "scheduled batch triages everything" model is a different thing.
+
+**Capture confirmation**:
+The single Telegram reply the bot sends back **after triage runs**, naming the notepad a note landed in and whether triage **reused or newly started** it (`📓 Filed in *Shopping list*` vs `🆕 Started *Shopping list*`), or that the note was kept unfiled or couldn't be filed. It is sent by the triage step — not the Ingest core, which stops at the landed row — and carries the `✏️ Move` button that opens a Correction. There is no separate pre-triage acknowledgement: on the happy path triage is seconds away, so capture `200`s silently and the confirmation is the only human-facing reply. See [ADR 0013](docs/adr/0013-notes-capture-feedback-loop.md).
+_Avoid_: Receipt, ack — "ack" is the bare `200` capture returns to Telegram; the confirmation is the later, human-facing message about where the note went.
+
+**Correction**:
+Fixing a note's placement from the phone by tapping the confirmation's `✏️ Move` button, which expands to a button per existing notepad plus `➕ New notepad`; a tap reassigns the note's `notepad_id` **directly**, with no LLM. Deterministic by design — correcting a filing is about removing the model's judgment, so it never re-invokes triage. The bot picker is manual-only; asking the agent to re-file (re-triage) is a web-manager action, not a phone one. Arrives as a Telegram `callback_query` handled as its own operation (never `ingestNote`, which is only for new captures). See [ADR 0013](docs/adr/0013-notes-capture-feedback-loop.md).
+_Avoid_: Re-triage — re-triage re-runs the model; a Correction is a direct manual reassignment and the phone flow deliberately excludes the model re-run.
+
+**Outbound adapter**:
+The per-channel return path that turns triage's channel-agnostic capture outcome (`{ notepad, created?, unfiled?, failed? }`) into a reply on the note's own channel — the mirror of the inbound Adapter. Triage hands the outcome to a `notifyCapture(note, outcome)` dispatcher that selects the Outbound adapter by `note.channel`; the Telegram one renders the Capture confirmation text plus its inline keyboard and calls `sendMessage`, a future iOS-widget one registers its own reply. Keeps triage from importing any transport, so a new channel adds one adapter and no triage change. See [ADR 0013](docs/adr/0013-notes-capture-feedback-loop.md).
+_Avoid_: Notifier — the outbound adapter is the channel-specific half; `notifyCapture` is the channel-agnostic dispatcher in front of it.
 
 **Connection Portal**:
 SnapTrade's hosted page where the user completes the brokerage OAuth — for Fidelity, its own login plus the Fidelity Access consent screen. The app can request a portal URL but cannot complete the flow; what comes out the far side is the `authorizationId` that identifies the Connection from then on.
