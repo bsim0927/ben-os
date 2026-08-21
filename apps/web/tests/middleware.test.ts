@@ -103,11 +103,25 @@ describe("updateSession", () => {
     expect(response.headers.get("location")).toBeNull();
   });
 
+  it("lets the Telegram webhook through unauthenticated, since it gates on a secret instead", async () => {
+    // Telegram POSTs server-to-server with no Google session; the route
+    // authenticates itself with the secret-token header + chat allowlist
+    // (ADR 0011 dec. 4). Redirecting it to /login would drop every note.
+    signedInAs(null);
+
+    const response = await updateSession(request("/api/notes/telegram/webhook"));
+
+    expect(response.headers.get("location")).toBeNull();
+  });
+
   it("does not extend that exemption to look-alike paths", async () => {
     signedInAs(null);
 
-    const response = await updateSession(request("/api/cron-secrets"));
+    const cron = await updateSession(request("/api/cron-secrets"));
+    expect(cron.headers.get("location")).toBe("https://ben-os.test/login");
 
-    expect(response.headers.get("location")).toBe("https://ben-os.test/login");
+    // The webhook exemption is exact, too — no other /api/notes route is public.
+    const notes = await updateSession(request("/api/notes/list"));
+    expect(notes.headers.get("location")).toBe("https://ben-os.test/login");
   });
 });
